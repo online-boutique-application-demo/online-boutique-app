@@ -251,7 +251,7 @@ sequenceDiagram
         CI->>CI: Run unit tests
         CI->>CI: Lint & format check
         CI->>CI: SCA scan (Trivy)
-        CI->>CI: SAST scan (Semgrep)
+        CI->>CI: SAST scan (SonarQube)
         CI->>CI: Build Docker image
         CI->>CI: Scan image (Trivy)
         CI->>CI: Sign image (Cosign)
@@ -379,7 +379,7 @@ graph TB
 graph TD
     subgraph "Shift-Left Security"
         A["Pre-Commit\ngitleaks"] --> B["SCA\nTrivy FS + Dependabot"]
-        B --> C["SAST\nSemgrep + CodeQL"]
+        B --> C["SAST\nSonarQube"]
         C --> D["Container Scan\nTrivy Image + Hadolint"]
         D --> E["Image Signing\nCosign"]
     end
@@ -404,8 +404,7 @@ graph TD
 | Pre-commit | gitleaks | Secret Scan | Phát hiện secrets trong code |
 | Build | Trivy (fs) | SCA | Quét CVEs trong dependencies |
 | Build | Dependabot | SCA | Auto-update vulnerable dependencies |
-| Build | Semgrep | SAST | Phân tích mã nguồn tìm lỗ hổng |
-| Build | CodeQL | SAST | Deep semantic code analysis |
+| Build | SonarQube | SAST | Phân tích mã nguồn tìm lỗ hổng, code quality, Quality Gates |
 | Build | Hadolint | Dockerfile Lint | Best practices cho Dockerfile |
 | Build | Trivy (image) | Container Scan | Quét CVEs trong Docker images |
 | Build | Cosign | Image Signing | Ký xác thực Docker images |

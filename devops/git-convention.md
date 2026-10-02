@@ -144,7 +144,7 @@ docs(devops): add Stage 5 Monitoring completion report
 
 # Stage 6 - Security
 ci(security): add Trivy SCA filesystem scanning
-ci(security): add Semgrep SAST analysis
+ci(security): add SonarQube SAST integration with Quality Gates
 ci(security): add Trivy image scanning and Cosign signing
 ci(security): add OWASP ZAP DAST scanning for staging
 feat(security): add Kyverno policies for pod security
@@ -162,20 +162,7 @@ docs(devops): add Stage 6 DevSecOps completion report
 
 ## 3. Lưu Ý Đặc Biệt
 
-### 3.1 Branch vs Environment (QUAN TRỌNG)
-
-```
-❌ SAI: branch dev = environment dev, branch staging = environment staging
-✅ ĐÚNG: environments được chia bằng Terraform + Kustomize overlays, KHÔNG phải branch
-```
-
-| Khái niệm | Quản lý bằng | Vị trí |
-|-----------|-------------|--------|
-| Git branch | `git branch` | GitHub |
-| Environment Dev | `infra/environments/dev/` + `overlays/dev/` | AWS EKS |
-| Environment Staging | `infra/environments/staging/` + `overlays/staging/` | AWS EKS |
-
-### 3.2 Không Commit Secrets
+### 3.1 Không Commit Secrets
 
 Các file KHÔNG được commit:
 - `*.tfstate` / `*.tfstate.backup`

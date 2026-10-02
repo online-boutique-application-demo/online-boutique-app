@@ -1,16 +1,4 @@
-# 🚀 Kế Hoạch Triển Khai DevOps – Online Boutique trên AWS (v2)
-
-> [!NOTE]
-> **Phiên bản:** 2.0 – Đã điều chỉnh theo feedback  
-> **Ngày cập nhật:** 2026-10-02  
-> **Thay đổi chính so với v1:**
-> - Chỉ 2 môi trường: **dev** + **staging** (bỏ prod)
-> - EKS dùng **Spot Instances**, version **1.32**
-> - CD dùng repo riêng: **online-boutique-config**
-> - Istio bổ sung **Kiali** dashboard
-> - Thêm thư mục **devops/** cho documentation theo từng stage
-
----
+# 🚀 Kế hoạch triển khai project DevOps – Online Boutique trên AWS
 
 ## Tổng Quan Dự Án
 
@@ -118,6 +106,8 @@ graph TB
 ```
 devops/
 ├── plan.md                        # Bản kế hoạch này
+├── git-convention.md              # Quy ước Git commit
+├── architecture.md                # Kiến trúc tổng thể
 ├── stage-1-terraform.md           # Viết sau khi hoàn thành Stage 1
 ├── stage-2-ci-pipeline.md         # Viết sau khi hoàn thành Stage 2
 ├── stage-3-cd-argocd.md           # Viết sau khi hoàn thành Stage 3
