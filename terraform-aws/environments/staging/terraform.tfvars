@@ -1,0 +1,27 @@
+# =============================================================================
+# Staging Environment – Variable Values
+# Uses different VPC CIDR to avoid conflicts if peered with dev
+# =============================================================================
+
+aws_region   = "ap-southeast-1"
+project_name = "online-boutique"
+environment  = "staging"
+
+# VPC – different CIDR from dev (10.0.0.0/16)
+vpc_cidr           = "10.1.0.0/16"
+az_count           = 3
+single_nat_gateway = true
+
+# EKS
+cluster_version     = "1.32"
+node_instance_types = ["t3.medium"]
+capacity_type       = "SPOT"
+node_disk_size      = 50
+node_desired_size   = 3
+node_min_size       = 2
+node_max_size       = 5
+
+# ElastiCache
+redis_version            = "7.1"
+redis_node_type          = "cache.t3.micro"
+redis_num_cache_clusters = 2
