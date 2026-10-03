@@ -18,7 +18,7 @@ terraform {
   }
 
   backend "s3" {
-    bucket         = "online-boutique-tfstate-<ACCOUNT_ID>"
+    bucket         = "online-boutique-tfstate-798836978890"
     key            = "environments/staging/terraform.tfstate"
     region         = "ap-southeast-1"
     dynamodb_table = "online-boutique-terraform-locks"

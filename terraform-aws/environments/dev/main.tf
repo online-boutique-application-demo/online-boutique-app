@@ -19,8 +19,7 @@ terraform {
 
   backend "s3" {
     # bucket name will be: online-boutique-tfstate-<ACCOUNT_ID>
-    # Replace <ACCOUNT_ID> with your AWS account ID before running terraform init
-    bucket         = "online-boutique-tfstate-<ACCOUNT_ID>"
+    bucket         = "online-boutique-tfstate-798836978890"
     key            = "environments/dev/terraform.tfstate"
     region         = "ap-southeast-1"
     dynamodb_table = "online-boutique-terraform-locks"
