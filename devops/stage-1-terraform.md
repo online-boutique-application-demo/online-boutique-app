@@ -94,6 +94,8 @@ terraform init && terraform apply
 ### Deploy environment
 ```bash
 cd terraform-aws/environments/dev
+# Sao chép file example và điều chỉnh giá trị
+cp terraform.tfvars.example terraform.tfvars
 # Sửa <ACCOUNT_ID> trong main.tf
 terraform init
 terraform plan -out=tfplan
@@ -102,6 +104,6 @@ terraform apply tfplan
 
 ## 7. Bài Học Kinh Nghiệm
 
-1. **`*.tfvars` bị gitignore**: File `.gitignore` gốc của project có rule `*.tfvars`. Cần `git add -f` để force track vì tfvars của project này không chứa secrets.
+1. **`*.tfvars` pattern**: Dùng `terraform.tfvars.example` để commit mẫu config, người dùng tự copy sang `terraform.tfvars` (bị gitignore) và điền giá trị thực tế.
 2. **EKS add-ons cần node group**: Add-ons như CoreDNS cần ít nhất 1 node đang chạy, nên phải `depends_on` node group.
 3. **KMS key rotation**: Bật `enable_key_rotation = true` cho KMS key dùng encrypt EKS secrets.

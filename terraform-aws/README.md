@@ -42,7 +42,10 @@ This creates an S3 bucket (`online-boutique-tfstate-<ACCOUNT_ID>`) and DynamoDB 
 ```bash
 cd terraform-aws/environments/dev
 
-# Replace <ACCOUNT_ID> in main.tf backend config with your AWS account ID
+# 1. Copy example vars and adjust values
+cp terraform.tfvars.example terraform.tfvars
+
+# 2. Replace <ACCOUNT_ID> in main.tf backend config with your AWS account ID
 terraform init
 terraform plan
 terraform apply
