@@ -282,15 +282,34 @@ Tạo **IAM Roles for Service Accounts** – cơ chế cho phép Kubernetes pods
 
 ## 6. Hướng Dẫn Sử Dụng
 
-### 1. Bootstrap State Backend
+### 1. Bootstrap State Backend (Quy trình 2 bước)
 
+Terraform cần S3 bucket để lưu remote state, nhưng S3 bucket này lại được quản lý bởi chính Terraform. Để giải quyết bài toán "con gà - quả trứng" này, quá trình bootstrap tuân theo quy trình 2 bước với pattern `backend.tf.example`:
+
+**Bước 1.1: Tạo S3 Bucket bằng Local State**
 ```bash
 cd terraform-aws/global/s3-backend
 terraform init
 terraform apply
 ```
+- Lệnh này khởi tạo Terraform với **local backend** (do chưa có file `backend.tf`).
+- Terraform sẽ tạo S3 bucket `online-boutique-tfstate-<ACCOUNT_ID>` với KMS encryption, bucket versioning và chặn public access hoàn toàn.
+- Output trả về `aws_account_id` và `state_bucket_name`.
 
-This creates an S3 bucket (`online-boutique-tfstate-<ACCOUNT_ID>`) with S3 native state locking.
+**Bước 1.2: Di chuyển Local State lên S3 Backend (S3 Native Locking)**
+```bash
+# Copy file cấu hình mẫu backend.tf.example thành backend.tf
+cp backend.tf.example backend.tf
+
+# Thay thế <ACCOUNT_ID> trong backend.tf bằng Account ID hiển thị ở output Bước 1.1
+# Tiến hành migrate state từ máy local lên S3 bucket:
+terraform init -migrate-state
+```
+- Lệnh `terraform init -migrate-state` sẽ copy file `terraform.tfstate` từ máy local lên S3 bucket tại key `global/s3-backend/terraform.tfstate`.
+- File `backend.tf` đã được cấu hình trong `.gitignore` để tránh commit đè account ID cá nhân lên git repository.
+
+> **Lưu ý quan trọng khi triển khai trên AWS Account mới**:
+> Khi người khác clone repository này và triển khai trên AWS Account của họ, trước khi chạy `terraform init` ở các module tiếp theo (`global/ecr`, `global/github-oidc`, `environments/dev`, `environments/staging`), cần cập nhật giá trị `bucket = "online-boutique-tfstate-<ACCOUNT_ID>"` trong khối `backend "s3"` của từng module bằng AWS Account ID thực tế của họ.
 
 ### 2. Create ECR Repositories
 
@@ -331,3 +350,5 @@ aws eks update-kubeconfig --region ap-southeast-1 --name online-boutique-dev
 5. **EKS-managed cluster SG**: Dùng security group do EKS tự tạo (gắn cho cả control plane lẫn managed nodes) thay vì tạo SG riêng chỉ gắn vào control plane.
 6. **S3 native locking**: Từ Terraform >= 1.10, dùng `use_lockfile = true` thay cho DynamoDB table.
 7. **GitHub OIDC**: Dùng OIDC federation thay vì access key dài hạn cho CI/CD.
+8. **Pattern `backend.tf.example` cho Bootstrap State**: Tách khối cấu hình `backend` ra `backend.tf.example` và đưa `backend.tf` vào `.gitignore` trong module bootstrap. Nhờ đó, người mới clone repo chạy lần đầu sẽ tự động dùng local state để tạo S3 bucket mà không bị lỗi thiếu bucket; sau khi tạo xong chỉ cần copy sang `backend.tf` và chạy `terraform init -migrate-state`.
+

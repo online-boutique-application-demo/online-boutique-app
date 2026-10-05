@@ -2,12 +2,14 @@
 # Terraform State Backend Bootstrap
 # Creates S3 bucket for remote state management (using S3 native state locking)
 #
-# USAGE:
-#   1. First run with local state:
+# USAGE (2-step bootstrap):
+#   1. Step 1: Create S3 bucket using local state:
 #      cd terraform-aws/global/s3-backend
 #      terraform init
 #      terraform apply
-#   2. Migrate local state to S3 backend:
+#   2. Step 2: Migrate state to S3 bucket with native state locking:
+#      cp backend.tf.example backend.tf
+#      # Fill in your AWS Account ID in backend.tf
 #      terraform init -migrate-state
 # =============================================================================
 
@@ -19,14 +21,6 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
-  }
-
-  backend "s3" {
-    bucket       = "online-boutique-tfstate-798836978890"
-    key          = "global/s3-backend/terraform.tfstate"
-    region       = "ap-southeast-1"
-    encrypt      = true
-    use_lockfile = true
   }
 }
 

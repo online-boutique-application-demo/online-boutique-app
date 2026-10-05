@@ -29,15 +29,27 @@ terraform-aws/
 
 ## Quick Start
 
-### 1. Bootstrap State Backend
+### 1. Bootstrap State Backend (2-Step Process)
 
+Because Terraform needs an S3 bucket to store remote state, but the bucket itself is created by Terraform, bootstrapping follows a 2-step pattern:
+
+**Step 1.1: Create S3 Bucket with local state**
 ```bash
 cd terraform-aws/global/s3-backend
 terraform init
 terraform apply
 ```
+*Note the `aws_account_id` and `state_bucket_name` in the outputs.*
 
-This creates an S3 bucket (`online-boutique-tfstate-<ACCOUNT_ID>`) with S3 native state locking.
+**Step 1.2: Migrate state to S3 with native state locking**
+```bash
+cp backend.tf.example backend.tf
+# Replace <ACCOUNT_ID> in backend.tf with your AWS Account ID from Step 1.1
+terraform init -migrate-state
+```
+
+> **Note for other modules**:
+> When deploying to a new AWS account, update the bucket name (`online-boutique-tfstate-<ACCOUNT_ID>`) in `backend "s3"` blocks across modules (`global/ecr/main.tf`, `global/github-oidc/main.tf`, `environments/dev/main.tf`, `environments/staging/main.tf`) with your actual AWS Account ID.
 
 ### 2. Create ECR Repositories
 

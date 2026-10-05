@@ -13,6 +13,7 @@
 *.tfvars
 *.tfplan
 tfplan
+terraform-aws/global/s3-backend/backend.tf
 crash.log
 crash.*.log
 override.tf
