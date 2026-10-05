@@ -4,7 +4,7 @@
 # =============================================================================
 
 terraform {
-  required_version = ">= 1.5.0"
+  required_version = ">= 1.10.0"
 
   required_providers {
     aws = {
@@ -21,8 +21,8 @@ terraform {
     bucket         = "online-boutique-tfstate-798836978890"
     key            = "environments/staging/terraform.tfstate"
     region         = "ap-southeast-1"
-    dynamodb_table = "online-boutique-terraform-locks"
     encrypt        = true
+    use_lockfile   = true
   }
 }
 

@@ -12,7 +12,7 @@
 # =============================================================================
 
 terraform {
-  required_version = ">= 1.5.0"
+  required_version = ">= 1.10.0"
 
   required_providers {
     aws = {
@@ -23,11 +23,11 @@ terraform {
 
   # Uncomment after first apply to migrate state to S3
   # backend "s3" {
-  #   bucket         = "online-boutique-tfstate-<ACCOUNT_ID>"
-  #   key            = "global/s3-backend/terraform.tfstate"
-  #   region         = "ap-southeast-1"
-  #   dynamodb_table = "online-boutique-terraform-locks"
-  #   encrypt        = true
+  #   bucket       = "online-boutique-tfstate-<ACCOUNT_ID>"
+  #   key          = "global/s3-backend/terraform.tfstate"
+  #   region       = "ap-southeast-1"
+  #   encrypt      = true
+  #   use_lockfile = true
   # }
 }
 
