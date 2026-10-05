@@ -80,3 +80,26 @@ resource "aws_iam_openid_connect_provider" "eks" {
   thumbprint_list = [data.tls_certificate.eks.certificates[0].sha1_fingerprint]
   url             = aws_eks_cluster.main.identity[0].oidc[0].issuer
 }
+
+# -----------------------------------------------------------------------------
+# EKS Access Entry (for API authentication mode)
+# Automatically grants Cluster Admin permissions to whoever creates/applies the cluster
+# -----------------------------------------------------------------------------
+data "aws_caller_identity" "current" {}
+
+resource "aws_eks_access_entry" "cluster_creator" {
+  cluster_name  = aws_eks_cluster.main.name
+  principal_arn = data.aws_caller_identity.current.arn
+  type          = "STANDARD"
+}
+
+resource "aws_eks_access_policy_association" "cluster_creator" {
+  cluster_name  = aws_eks_cluster.main.name
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+  principal_arn = data.aws_caller_identity.current.arn
+
+  access_scope {
+    type = "cluster"
+  }
+}
+

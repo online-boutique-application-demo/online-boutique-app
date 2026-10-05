@@ -168,6 +168,8 @@ Tạo Amazon EKS cluster v1.36 với Spot managed node groups và VPC CNI prefix
 | policy attachment | `AmazonEC2ContainerRegistryReadOnly` | Cho phép nodes **pull Docker images** từ ECR. |
 | `data.tls_certificate` | `eks` | Lấy TLS certificate từ OIDC issuer URL của EKS – cần cho xác thực OIDC provider. |
 | `aws_iam_openid_connect_provider` | `eks` | **OIDC Provider** – nền tảng cho **IRSA** (IAM Roles for Service Accounts). Cho phép Kubernetes ServiceAccounts assume IAM roles mà không cần access keys. |
+| `aws_eks_access_entry` | `cluster_creator` | **EKS Access Entry** – tự động đăng ký IAM principal (user hoặc role) thực hiện `terraform apply` vào hệ thống xác thực của EKS. |
+| `aws_eks_access_policy_association` | `cluster_creator` | **EKS Access Policy Association** – gắn quyền `AmazonEKSClusterAdminPolicy` cho Access Entry trên để người apply có toàn quyền admin cluster qua `kubectl`. |
 
 #### Resources – `addons.tf`
 
@@ -351,4 +353,5 @@ aws eks update-kubeconfig --region ap-southeast-1 --name online-boutique-dev
 6. **S3 native locking**: Từ Terraform >= 1.10, dùng `use_lockfile = true` thay cho DynamoDB table.
 7. **GitHub OIDC**: Dùng OIDC federation thay vì access key dài hạn cho CI/CD.
 8. **Pattern `backend.tf.example` cho Bootstrap State**: Tách khối cấu hình `backend` ra `backend.tf.example` và đưa `backend.tf` vào `.gitignore` trong module bootstrap. Nhờ đó, người mới clone repo chạy lần đầu sẽ tự động dùng local state để tạo S3 bucket mà không bị lỗi thiếu bucket; sau khi tạo xong chỉ cần copy sang `backend.tf` và chạy `terraform init -migrate-state`.
+9. **Tự động hóa EKS Access Entries**: Khi dùng `authentication_mode = "API"`, để tránh lỗi 401 khi chạy `kubectl`, cấu hình `aws_eks_access_entry` và `aws_eks_access_policy_association` với `data.aws_caller_identity.current.arn` trực tiếp trong Terraform. Nhờ vậy, bất kỳ ai (hoặc CI/CD pipeline) khi chạy `terraform apply` đều tự động được cấp quyền Cluster Admin mà không cần chạy lệnh AWS CLI thủ công.
 
