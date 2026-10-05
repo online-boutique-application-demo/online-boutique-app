@@ -77,16 +77,8 @@ module "eks" {
   node_max_size          = var.node_max_size
 }
 
-# =============================================================================
-# Module: ECR (shared across environments, only create once in dev)
-# =============================================================================
-module "ecr" {
-  source = "../../modules/ecr"
-
-  project_name = var.project_name
-  environment  = var.environment
-  force_delete = true # Allow force delete in dev
-}
+# NOTE: ECR repositories are managed globally in terraform-aws/global/ecr/
+# to avoid accidental deletion when destroying a per-environment stack.
 
 # =============================================================================
 # Module: ElastiCache Redis
