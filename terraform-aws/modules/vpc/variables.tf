@@ -30,3 +30,9 @@ variable "single_nat_gateway" {
   type        = bool
   default     = true
 }
+
+variable "enable_flow_logs" {
+  description = "Enable VPC Flow Logs to CloudWatch Logs"
+  type        = bool
+  default     = true
+}
