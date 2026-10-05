@@ -31,15 +31,32 @@ variable "endpoint_public_access" {
 }
 
 variable "node_instance_types" {
-  description = "Instance types for the node group"
+  description = "Instance types for the node group. For Spot, list several types with the same vCPU/memory so Cluster Autoscaler sizing stays accurate and interruptions are less likely"
   type        = list(string)
   default     = ["t3.medium"]
+}
+
+variable "node_ami_type" {
+  description = "AMI type for the managed node group (AL2 is not supported on EKS >= 1.33)"
+  type        = string
+  default     = "AL2023_x86_64_STANDARD"
 }
 
 variable "capacity_type" {
   description = "Capacity type for node group (ON_DEMAND or SPOT)"
   type        = string
   default     = "SPOT"
+
+  validation {
+    condition     = contains(["ON_DEMAND", "SPOT"], var.capacity_type)
+    error_message = "capacity_type must be either ON_DEMAND or SPOT."
+  }
+}
+
+variable "enable_prefix_delegation" {
+  description = "Enable VPC CNI prefix delegation to raise the max pods per node (requires Nitro instances)"
+  type        = bool
+  default     = true
 }
 
 variable "node_disk_size" {

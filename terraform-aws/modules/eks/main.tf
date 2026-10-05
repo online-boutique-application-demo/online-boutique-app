@@ -73,6 +73,7 @@ resource "aws_eks_node_group" "main" {
   node_group_name = "${var.cluster_name}-main"
   node_role_arn   = aws_iam_role.node.arn
   subnet_ids      = var.private_subnet_ids
+  ami_type        = var.node_ami_type
   instance_types  = var.node_instance_types
   capacity_type   = var.capacity_type
   disk_size       = var.node_disk_size
@@ -96,6 +97,9 @@ resource "aws_eks_node_group" "main" {
     aws_iam_role_policy_attachment.node_AmazonEKSWorkerNodePolicy,
     aws_iam_role_policy_attachment.node_AmazonEKS_CNI_Policy,
     aws_iam_role_policy_attachment.node_AmazonEC2ContainerRegistryReadOnly,
+    # Nodes must launch after VPC CNI is configured with prefix delegation
+    aws_eks_addon.vpc_cni,
+    aws_eks_addon.kube_proxy,
   ]
 
   tags = {
