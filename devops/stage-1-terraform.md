@@ -67,8 +67,8 @@ terraform-aws/
 - Terraform role: admin access, giới hạn chỉ main branch
 
 ### 3.8 S3 Native State Locking
-- Sử dụng `use_lockfile = true` thay vì DynamoDB table (native S3 locking, Terraform >= 1.10)
-- DynamoDB table vẫn tồn tại để backward compatibility nhưng không còn được tham chiếu
+- Sử dụng `use_lockfile = true` trực tiếp trên S3 (tính năng native locking của Terraform >= 1.10).
+- Không cần tạo và duy trì bảng DynamoDB table riêng cho state locking, giúp giảm chi phí và đơn giản hóa kiến trúc.
 
 ### 3.9 VPC CIDR khác nhau
 - Dev: `10.0.0.0/16`
@@ -87,7 +87,6 @@ Module bootstrap tạo hạ tầng cho việc quản lý Terraform state từ xa
 | `aws_s3_bucket_versioning` | `terraform_state` | Bật **versioning** cho state bucket – cho phép rollback về state cũ nếu có lỗi khi `terraform apply`. |
 | `aws_s3_bucket_server_side_encryption_configuration` | `terraform_state` | Mã hóa state files bằng **AWS KMS** (Server-Side Encryption). State file chứa thông tin nhạy cảm (endpoints, ARNs), cần được bảo vệ. |
 | `aws_s3_bucket_public_access_block` | `terraform_state` | **Chặn hoàn toàn public access** – block ACLs, policies, và restrict public buckets. Đảm bảo state file không bao giờ bị public. |
-| `aws_dynamodb_table` | `terraform_locks` | **State locking table** (legacy) – DynamoDB PAY_PER_REQUEST. Hiện đã chuyển sang dùng S3 native locking (`use_lockfile = true`), bảng này giữ lại cho backward compatibility. |
 | `data.aws_caller_identity` | `current` | Lấy **AWS Account ID** hiện tại để tạo tên S3 bucket duy nhất, không cần nhập thủ công. |
 
 ---
@@ -283,21 +282,44 @@ Tạo **IAM Roles for Service Accounts** – cơ chế cho phép Kubernetes pods
 
 ## 6. Hướng Dẫn Sử Dụng
 
-### Bootstrap (chạy 1 lần)
+### 1. Bootstrap State Backend
+
 ```bash
 cd terraform-aws/global/s3-backend
+terraform init
+terraform apply
+```
+
+This creates an S3 bucket (`online-boutique-tfstate-<ACCOUNT_ID>`) with S3 native state locking.
+
+### 2. Create ECR Repositories
+
+```bash
+cd terraform-aws/global/ecr
 terraform init && terraform apply
 ```
 
-### Deploy environment
+### 3. Setup GitHub OIDC (for CI/CD)
+
+```bash
+cd terraform-aws/global/github-oidc
+terraform init && terraform apply
+```
+
+### 4. Deploy Dev Environment
+
 ```bash
 cd terraform-aws/environments/dev
-# Sao chép file example và điều chỉnh giá trị
 cp terraform.tfvars.example terraform.tfvars
-# Sửa <ACCOUNT_ID> trong main.tf
 terraform init
-terraform plan -out=tfplan
-terraform apply tfplan
+terraform plan
+terraform apply
+```
+
+### 5. Configure kubectl
+
+```bash
+aws eks update-kubeconfig --region ap-southeast-1 --name online-boutique-dev
 ```
 
 ## 7. Bài Học Kinh Nghiệm
