@@ -185,7 +185,7 @@ graph TB
 
 ```mermaid
 graph TB
-    subgraph "EKS Cluster v1.32"
+    subgraph "EKS Cluster v1.36"
         CP[Control Plane - AWS Managed]
 
         subgraph "Managed Node Group - Spot"
@@ -213,7 +213,7 @@ graph TB
 
 | Tham số | Giá trị |
 |---------|---------|
-| **Version** | 1.32 |
+| **Version** | 1.36 |
 | **Node Type** | t3.medium (Spot) |
 | **Scaling** | Min: 2, Desired: 3, Max: 5 |
 | **Encryption** | KMS cho Kubernetes Secrets |
@@ -287,7 +287,7 @@ sequenceDiagram
 
 | Repository | Mục đích | Nội dung chính |
 |-----------|----------|---------------|
-| **online-boutique-app** | Source code + Infrastructure | `src/`, `infra/`, `.github/workflows/`, `devops/` |
+| **online-boutique-app** | Source code + Infrastructure | `src/`, `terraform-aws/`, `.github/workflows/`, `devops/` |
 | **online-boutique-config** | GitOps Configuration | ArgoCD apps, Kustomize base/overlays, Helm values |
 
 ---
@@ -449,7 +449,7 @@ graph LR
 | ElastiCache (2x cache.t3.micro) | ~$25 | ~$25 | ~$50 |
 | NAT Gateway | ~$33 | ~$33 | ~$66 |
 | ALB | ~$18 | ~$18 | ~$36 |
-| S3 + DynamoDB (state) | < $1 | — | ~$1 |
+| S3 (state + locking) | < $1 | — | ~$1 |
 | CloudWatch Logs | ~$5 | ~$5 | ~$10 |
 | ECR | ~$2 | — | ~$2 |
 | **Tổng ước tính** | **~$186** | **~$184** | **~$370** |
