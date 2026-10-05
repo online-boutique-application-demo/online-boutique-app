@@ -25,32 +25,11 @@ resource "aws_cloudwatch_log_group" "cluster" {
   retention_in_days = 30
 }
 
-# -----------------------------------------------------------------------------
-# EKS Cluster Security Group
-# -----------------------------------------------------------------------------
-resource "aws_security_group" "cluster" {
-  name_prefix = "${var.cluster_name}-cluster-"
-  vpc_id      = var.vpc_id
-  description = "Security group for EKS cluster control plane"
-
-  tags = {
-    Name = "${var.cluster_name}-cluster-sg"
-  }
-
-  lifecycle {
-    create_before_destroy = true
-  }
-}
-
-resource "aws_security_group_rule" "cluster_egress" {
-  type              = "egress"
-  from_port         = 0
-  to_port           = 0
-  protocol          = "-1"
-  cidr_blocks       = ["0.0.0.0/0"]
-  security_group_id = aws_security_group.cluster.id
-  description       = "Allow all outbound traffic"
-}
+# NOTE: No custom security group is created here. EKS automatically creates a
+# "cluster security group" that is attached to BOTH the control plane ENIs and
+# the managed node group instances. It is exposed via the
+# `cluster_primary_security_group_id` output and used by other modules
+# (e.g. ElastiCache) to allow traffic from pods/nodes.
 
 # -----------------------------------------------------------------------------
 # EKS Cluster
@@ -64,7 +43,6 @@ resource "aws_eks_cluster" "main" {
     subnet_ids              = concat(var.private_subnet_ids, var.public_subnet_ids)
     endpoint_private_access = true
     endpoint_public_access  = var.endpoint_public_access
-    security_group_ids      = [aws_security_group.cluster.id]
   }
 
   encryption_config {

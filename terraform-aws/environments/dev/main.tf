@@ -66,7 +66,6 @@ module "eks" {
   cluster_name           = local.cluster_name
   cluster_version        = var.cluster_version
   environment            = var.environment
-  vpc_id                 = module.vpc.vpc_id
   private_subnet_ids     = module.vpc.private_subnet_ids
   public_subnet_ids      = module.vpc.public_subnet_ids
   endpoint_public_access = true
@@ -99,7 +98,7 @@ module "elasticache" {
   environment               = var.environment
   vpc_id                    = module.vpc.vpc_id
   subnet_ids                = module.vpc.database_subnet_ids
-  allowed_security_group_id = module.eks.cluster_security_group_id
+  allowed_security_group_id = module.eks.cluster_primary_security_group_id
   redis_version             = var.redis_version
   node_type                 = var.redis_node_type
   num_cache_clusters        = var.redis_num_cache_clusters

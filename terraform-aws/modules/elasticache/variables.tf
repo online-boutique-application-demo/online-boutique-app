@@ -19,7 +19,7 @@ variable "subnet_ids" {
 }
 
 variable "allowed_security_group_id" {
-  description = "Security group ID allowed to connect to Redis (EKS nodes)"
+  description = "Security group allowed to connect to Redis. Use the EKS-managed cluster security group (attached to managed node group instances)"
   type        = string
 }
 
