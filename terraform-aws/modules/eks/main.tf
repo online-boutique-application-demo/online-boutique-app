@@ -40,9 +40,14 @@ resource "aws_eks_cluster" "main" {
   role_arn = aws_iam_role.cluster.arn
 
   vpc_config {
-    subnet_ids              = concat(var.private_subnet_ids, var.public_subnet_ids)
+    subnet_ids              = var.private_subnet_ids
     endpoint_private_access = true
     endpoint_public_access  = var.endpoint_public_access
+    public_access_cidrs     = var.public_access_cidrs
+  }
+
+  access_config {
+    authentication_mode = "API"
   }
 
   encryption_config {

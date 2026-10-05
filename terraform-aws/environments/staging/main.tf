@@ -66,7 +66,6 @@ module "eks" {
   cluster_version        = var.cluster_version
   environment            = var.environment
   private_subnet_ids     = module.vpc.private_subnet_ids
-  public_subnet_ids      = module.vpc.public_subnet_ids
   endpoint_public_access = true
   node_instance_types    = var.node_instance_types
   capacity_type          = var.capacity_type

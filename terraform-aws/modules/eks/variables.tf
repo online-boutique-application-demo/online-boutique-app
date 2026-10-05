@@ -19,15 +19,16 @@ variable "private_subnet_ids" {
   type        = list(string)
 }
 
-variable "public_subnet_ids" {
-  description = "List of public subnet IDs"
-  type        = list(string)
-}
-
 variable "endpoint_public_access" {
   description = "Enable public access to the EKS API endpoint"
   type        = bool
   default     = true
+}
+
+variable "public_access_cidrs" {
+  description = "List of CIDR blocks allowed to access the public API endpoint. Defaults to open (suitable for a demo project)"
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
 }
 
 variable "node_instance_types" {
