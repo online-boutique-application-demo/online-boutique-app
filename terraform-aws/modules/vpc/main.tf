@@ -47,7 +47,7 @@ resource "aws_subnet" "public" {
   map_public_ip_on_launch = true
 
   tags = {
-    Name                                       = "${var.project_name}-${var.environment}-public-${local.azs[count.index]}"
+    Name                                        = "${var.project_name}-${var.environment}-public-${local.azs[count.index]}"
     "kubernetes.io/role/elb"                    = "1"
     "kubernetes.io/cluster/${var.cluster_name}" = "shared"
   }
@@ -64,7 +64,7 @@ resource "aws_subnet" "private" {
   availability_zone = local.azs[count.index]
 
   tags = {
-    Name                                       = "${var.project_name}-${var.environment}-private-${local.azs[count.index]}"
+    Name                                        = "${var.project_name}-${var.environment}-private-${local.azs[count.index]}"
     "kubernetes.io/role/internal-elb"           = "1"
     "kubernetes.io/cluster/${var.cluster_name}" = "shared"
   }
@@ -82,15 +82,6 @@ resource "aws_subnet" "database" {
 
   tags = {
     Name = "${var.project_name}-${var.environment}-db-${local.azs[count.index]}"
-  }
-}
-
-resource "aws_db_subnet_group" "database" {
-  name       = "${var.project_name}-${var.environment}-db-subnet-group"
-  subnet_ids = aws_subnet.database[*].id
-
-  tags = {
-    Name = "${var.project_name}-${var.environment}-db-subnet-group"
   }
 }
 

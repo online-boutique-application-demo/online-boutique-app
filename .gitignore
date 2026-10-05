@@ -7,7 +7,7 @@
 .skaffold-*.yaml
 # Terraform
 .terraform/
-.terraform.lock.hcl
+# Note: .terraform.lock.hcl is NOT ignored – commit it for reproducible builds
 *.tfstate
 *.tfstate.*
 *.tfvars
