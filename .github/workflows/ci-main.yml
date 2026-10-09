@@ -1,0 +1,225 @@
+# =============================================================================
+# CI Main – Orchestrator Workflow
+# Triggers on push to main/feature branches and PRs.
+# Detects which services changed and runs per-service CI in parallel.
+# =============================================================================
+
+name: CI – Build & Push to ECR
+
+on:
+  push:
+    branches:
+      - main
+      - "feature/**"
+      - "fix/**"
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "devops/**"
+      - "LICENSE"
+  pull_request:
+    branches:
+      - main
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "devops/**"
+      - "LICENSE"
+
+permissions:
+  id-token: write   # Required for OIDC authentication with AWS
+  contents: read
+  pull-requests: write  # Allow posting plan comments on PRs
+
+env:
+  AWS_REGION: ap-southeast-1
+  AWS_ACCOUNT_ID: "798836978890"
+  ECR_REGISTRY: 798836978890.dkr.ecr.ap-southeast-1.amazonaws.com
+
+# ─────────────────────────────────────────────────────────────
+# JOB 1: Detect which services have changed
+# ─────────────────────────────────────────────────────────────
+jobs:
+  detect-changes:
+    name: Detect Changed Services
+    runs-on: ubuntu-latest
+    outputs:
+      adservice: ${{ steps.filter.outputs.adservice }}
+      cartservice: ${{ steps.filter.outputs.cartservice }}
+      checkoutservice: ${{ steps.filter.outputs.checkoutservice }}
+      currencyservice: ${{ steps.filter.outputs.currencyservice }}
+      emailservice: ${{ steps.filter.outputs.emailservice }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      loadgenerator: ${{ steps.filter.outputs.loadgenerator }}
+      paymentservice: ${{ steps.filter.outputs.paymentservice }}
+      productcatalogservice: ${{ steps.filter.outputs.productcatalogservice }}
+      recommendationservice: ${{ steps.filter.outputs.recommendationservice }}
+      shippingservice: ${{ steps.filter.outputs.shippingservice }}
+      any_service: ${{ steps.filter.outputs.any_service }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect changed service paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            adservice:
+              - 'src/adservice/**'
+            cartservice:
+              - 'src/cartservice/**'
+            checkoutservice:
+              - 'src/checkoutservice/**'
+            currencyservice:
+              - 'src/currencyservice/**'
+            emailservice:
+              - 'src/emailservice/**'
+            frontend:
+              - 'src/frontend/**'
+            loadgenerator:
+              - 'src/loadgenerator/**'
+            paymentservice:
+              - 'src/paymentservice/**'
+            productcatalogservice:
+              - 'src/productcatalogservice/**'
+            recommendationservice:
+              - 'src/recommendationservice/**'
+            shippingservice:
+              - 'src/shippingservice/**'
+            any_service:
+              - 'src/**'
+
+# ─────────────────────────────────────────────────────────────
+# JOB 2: Build each changed service in parallel
+# ─────────────────────────────────────────────────────────────
+  build-adservice:
+    name: "Build adservice (Java)"
+    needs: detect-changes
+    if: needs.detect-changes.outputs.adservice == 'true'
+    uses: ./.github/workflows/ci-service.yml
+    with:
+      service: adservice
+      language: java
+      dockerfile_path: src/adservice/Dockerfile
+      context_path: src/adservice
+    secrets: inherit
+
+  build-cartservice:
+    name: "Build cartservice (C#)"
+    needs: detect-changes
+    if: needs.detect-changes.outputs.cartservice == 'true'
+    uses: ./.github/workflows/ci-service.yml
+    with:
+      service: cartservice
+      language: dotnet
+      dockerfile_path: src/cartservice/src/Dockerfile
+      context_path: src/cartservice
+    secrets: inherit
+
+  build-checkoutservice:
+    name: "Build checkoutservice (Go)"
+    needs: detect-changes
+    if: needs.detect-changes.outputs.checkoutservice == 'true'
+    uses: ./.github/workflows/ci-service.yml
+    with:
+      service: checkoutservice
+      language: go
+      dockerfile_path: src/checkoutservice/Dockerfile
+      context_path: src/checkoutservice
+    secrets: inherit
+
+  build-currencyservice:
+    name: "Build currencyservice (Node.js)"
+    needs: detect-changes
+    if: needs.detect-changes.outputs.currencyservice == 'true'
+    uses: ./.github/workflows/ci-service.yml
+    with:
+      service: currencyservice
+      language: node
+      dockerfile_path: src/currencyservice/Dockerfile
+      context_path: src/currencyservice
+    secrets: inherit
+
+  build-emailservice:
+    name: "Build emailservice (Python)"
+    needs: detect-changes
+    if: needs.detect-changes.outputs.emailservice == 'true'
+    uses: ./.github/workflows/ci-service.yml
+    with:
+      service: emailservice
+      language: python
+      dockerfile_path: src/emailservice/Dockerfile
+      context_path: src/emailservice
+    secrets: inherit
+
+  build-frontend:
+    name: "Build frontend (Go)"
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend == 'true'
+    uses: ./.github/workflows/ci-service.yml
+    with:
+      service: frontend
+      language: go
+      dockerfile_path: src/frontend/Dockerfile
+      context_path: src/frontend
+    secrets: inherit
+
+  build-loadgenerator:
+    name: "Build loadgenerator (Python)"
+    needs: detect-changes
+    if: needs.detect-changes.outputs.loadgenerator == 'true'
+    uses: ./.github/workflows/ci-service.yml
+    with:
+      service: loadgenerator
+      language: python
+      dockerfile_path: src/loadgenerator/Dockerfile
+      context_path: src/loadgenerator
+    secrets: inherit
+
+  build-paymentservice:
+    name: "Build paymentservice (Node.js)"
+    needs: detect-changes
+    if: needs.detect-changes.outputs.paymentservice == 'true'
+    uses: ./.github/workflows/ci-service.yml
+    with:
+      service: paymentservice
+      language: node
+      dockerfile_path: src/paymentservice/Dockerfile
+      context_path: src/paymentservice
+    secrets: inherit
+
+  build-productcatalogservice:
+    name: "Build productcatalogservice (Go)"
+    needs: detect-changes
+    if: needs.detect-changes.outputs.productcatalogservice == 'true'
+    uses: ./.github/workflows/ci-service.yml
+    with:
+      service: productcatalogservice
+      language: go
+      dockerfile_path: src/productcatalogservice/Dockerfile
+      context_path: src/productcatalogservice
+    secrets: inherit
+
+  build-recommendationservice:
+    name: "Build recommendationservice (Python)"
+    needs: detect-changes
+    if: needs.detect-changes.outputs.recommendationservice == 'true'
+    uses: ./.github/workflows/ci-service.yml
+    with:
+      service: recommendationservice
+      language: python
+      dockerfile_path: src/recommendationservice/Dockerfile
+      context_path: src/recommendationservice
+    secrets: inherit
+
+  build-shippingservice:
+    name: "Build shippingservice (Go)"
+    needs: detect-changes
+    if: needs.detect-changes.outputs.shippingservice == 'true'
+    uses: ./.github/workflows/ci-service.yml
+    with:
+      service: shippingservice
+      language: go
+      dockerfile_path: src/shippingservice/Dockerfile
+      context_path: src/shippingservice
+    secrets: inherit

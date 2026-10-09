@@ -1,0 +1,199 @@
+# =============================================================================
+# Terraform Apply – Merge Workflow
+# Triggered when terraform-aws/ changes are merged to main.
+# Runs terraform apply automatically for changed environments.
+# =============================================================================
+
+name: Terraform Apply (main)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "terraform-aws/**"
+      - ".github/workflows/terraform-apply.yml"
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ap-southeast-1
+  TF_VERSION: "1.10.5"
+
+jobs:
+  # ─────────────────────────────────────────
+  # Detect which environments changed
+  # ─────────────────────────────────────────
+  detect-env:
+    name: Detect changed Terraform environments
+    runs-on: ubuntu-latest
+    outputs:
+      dev: ${{ steps.filter.outputs.dev }}
+      staging: ${{ steps.filter.outputs.staging }}
+      global_ecr: ${{ steps.filter.outputs.global_ecr }}
+      global_oidc: ${{ steps.filter.outputs.global_oidc }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            dev:
+              - 'terraform-aws/environments/dev/**'
+              - 'terraform-aws/modules/**'
+            staging:
+              - 'terraform-aws/environments/staging/**'
+              - 'terraform-aws/modules/**'
+            global_ecr:
+              - 'terraform-aws/global/ecr/**'
+            global_oidc:
+              - 'terraform-aws/global/github-oidc/**'
+
+  # ─────────────────────────────────────────
+  # Apply – Dev (auto)
+  # ─────────────────────────────────────────
+  apply-dev:
+    name: Apply – dev environment
+    needs: detect-env
+    if: needs.detect-env.outputs.dev == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: dev
+    defaults:
+      run:
+        working-directory: terraform-aws/environments/dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC – Terraform role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::798836978890:role/online-boutique-github-terraform
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      - name: Terraform Validate
+        run: terraform validate -no-color
+
+      - name: Terraform Plan
+        run: terraform plan -no-color -input=false -out=tfplan
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve -input=false tfplan
+
+      - name: Output cluster info
+        run: |
+          echo "### ✅ Dev Infrastructure Applied" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          terraform output -no-color 2>/dev/null | sed 's/sensitive_value/[SENSITIVE]/' >> $GITHUB_STEP_SUMMARY || true
+
+  # ─────────────────────────────────────────
+  # Apply – Staging (requires manual approval via GitHub Environment)
+  # ─────────────────────────────────────────
+  apply-staging:
+    name: Apply – staging environment
+    needs: [detect-env, apply-dev]
+    if: needs.detect-env.outputs.staging == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: staging  # Requires manual approval configured in GitHub Environments
+    defaults:
+      run:
+        working-directory: terraform-aws/environments/staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC – Terraform role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::798836978890:role/online-boutique-github-terraform
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      - name: Terraform Plan
+        run: terraform plan -no-color -input=false -out=tfplan
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve -input=false tfplan
+
+  # ─────────────────────────────────────────
+  # Apply – Global ECR (when ecr module changes)
+  # ─────────────────────────────────────────
+  apply-global-ecr:
+    name: Apply – global ECR
+    needs: detect-env
+    if: needs.detect-env.outputs.global_ecr == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: dev
+    defaults:
+      run:
+        working-directory: terraform-aws/global/ecr
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC – Terraform role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::798836978890:role/online-boutique-github-terraform
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve -input=false
+
+  # ─────────────────────────────────────────
+  # Apply – Global GitHub OIDC
+  # ─────────────────────────────────────────
+  apply-global-oidc:
+    name: Apply – global GitHub OIDC
+    needs: detect-env
+    if: needs.detect-env.outputs.global_oidc == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: dev
+    defaults:
+      run:
+        working-directory: terraform-aws/global/github-oidc
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC – Terraform role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::798836978890:role/online-boutique-github-terraform
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve -input=false
