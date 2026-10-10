@@ -18,11 +18,11 @@ terraform {
   }
 
   backend "s3" {
-    bucket         = "online-boutique-tfstate-798836978890"
-    key            = "environments/staging/terraform.tfstate"
-    region         = "ap-southeast-1"
-    encrypt        = true
-    use_lockfile   = true
+    bucket       = "online-boutique-tfstate-798836978890"
+    key          = "environments/staging/terraform.tfstate"
+    region       = "ap-southeast-1"
+    encrypt      = true
+    use_lockfile = true
   }
 }
 
