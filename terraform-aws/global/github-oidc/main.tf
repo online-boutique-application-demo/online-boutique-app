@@ -74,7 +74,10 @@ resource "aws_iam_role" "github_ci" {
             "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
           }
           StringLike = {
-            "token.actions.githubusercontent.com:sub" = "repo:${var.github_org}/${var.github_repo_app}:*"
+            # Support both classic and immutable ID subject formats (GitHub mid-2026+)
+            # Classic:   repo:ORG/REPO:ref:refs/heads/...
+            # Immutable: repo:ORG@ID/REPO@ID:ref:refs/heads/...
+            "token.actions.githubusercontent.com:sub" = "repo:*${var.github_repo_app}*"
           }
         }
       }
@@ -157,9 +160,9 @@ resource "aws_iam_role" "github_terraform" {
           StringEquals = {
             "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
           }
-          # Allow from any branch/PR for plan; apply is gated by workflow trigger rules
+          # Support both classic and immutable ID subject formats (GitHub mid-2026+)
           StringLike = {
-            "token.actions.githubusercontent.com:sub" = "repo:${var.github_org}/${var.github_repo_app}:*"
+            "token.actions.githubusercontent.com:sub" = "repo:*${var.github_repo_app}*"
           }
         }
       }
