@@ -47,6 +47,9 @@ jobs:
   ci:
     name: "${{ inputs.service }} – Test, Build & Push"
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write    # Required for OIDC token generation (AWS assume role)
+      contents: read
 
     steps:
       # ─────────────────────────────────────────
