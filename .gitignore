@@ -5,19 +5,33 @@
 .kubernetes-manifests-*/
 .project
 .skaffold-*.yaml
+# Terraform
+.terraform/
 .terraform.lock.hcl
-.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfplan
+tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+# IDE & Editors
 .venv/
 .vs/
 .vscode/
 *.iml
 *.ipr
 *.iws
-*.pyc
 *.swp
-*.tfstate*
-*.tfvars
 *~
+# Language artifacts
+*.pyc
 bin/
 build/
 Dockerfile.pip
