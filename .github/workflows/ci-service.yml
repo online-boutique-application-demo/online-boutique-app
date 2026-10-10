@@ -130,7 +130,12 @@ jobs:
         if: inputs.language == 'node'
         run: |
           cd src/${{ inputs.service }}
-          npm test --if-present
+          # Skip if test script is the default "no test specified" stub
+          if node -e "const p=require('./package.json'); process.exit((p.scripts?.test || '').includes('no test specified') ? 0 : 1)" 2>/dev/null; then
+            echo "⚠️ No tests configured for ${{ inputs.service }}, skipping."
+          else
+            npm test
+          fi
 
       - name: Run Python tests
         if: inputs.language == 'python'
