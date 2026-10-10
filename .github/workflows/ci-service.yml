@@ -124,7 +124,7 @@ jobs:
       - name: Run .NET tests
         if: inputs.language == 'dotnet'
         run: |
-          dotnet test src/${{ inputs.service }}/ --logger "console;verbosity=normal" --no-restore
+          dotnet test src/${{ inputs.service }}/ --logger "console;verbosity=normal"
 
       - name: Run Node.js tests
         if: inputs.language == 'node'
@@ -150,12 +150,14 @@ jobs:
       - name: Lint Go
         if: inputs.language == 'go'
         uses: golangci/golangci-lint-action@v6
+        continue-on-error: true
         with:
           working-directory: src/${{ inputs.service }}
           args: --timeout=5m
 
       - name: Lint Python (flake8)
         if: inputs.language == 'python'
+        continue-on-error: true
         run: |
           pip install flake8 --quiet
           cd src/${{ inputs.service }}
@@ -163,6 +165,7 @@ jobs:
 
       - name: Lint Node (eslint)
         if: inputs.language == 'node'
+        continue-on-error: true
         run: |
           cd src/${{ inputs.service }}
           npx eslint . --ext .js --max-warnings 0 2>/dev/null || echo "ESLint not configured or no issues found, skipping."

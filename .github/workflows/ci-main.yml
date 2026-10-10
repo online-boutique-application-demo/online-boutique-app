@@ -102,6 +102,7 @@ jobs:
       language: java
       dockerfile_path: src/adservice/Dockerfile
       context_path: src/adservice
+      push_to_ecr: ${{ github.event_name == 'push' }}
     secrets: inherit
 
   build-cartservice:
@@ -114,6 +115,7 @@ jobs:
       language: dotnet
       dockerfile_path: src/cartservice/src/Dockerfile
       context_path: src/cartservice
+      push_to_ecr: ${{ github.event_name == 'push' }}
     secrets: inherit
 
   build-checkoutservice:
@@ -126,6 +128,7 @@ jobs:
       language: go
       dockerfile_path: src/checkoutservice/Dockerfile
       context_path: src/checkoutservice
+      push_to_ecr: ${{ github.event_name == 'push' }}
     secrets: inherit
 
   build-currencyservice:
@@ -138,6 +141,7 @@ jobs:
       language: node
       dockerfile_path: src/currencyservice/Dockerfile
       context_path: src/currencyservice
+      push_to_ecr: ${{ github.event_name == 'push' }}
     secrets: inherit
 
   build-emailservice:
@@ -150,6 +154,7 @@ jobs:
       language: python
       dockerfile_path: src/emailservice/Dockerfile
       context_path: src/emailservice
+      push_to_ecr: ${{ github.event_name == 'push' }}
     secrets: inherit
 
   build-frontend:
@@ -162,6 +167,7 @@ jobs:
       language: go
       dockerfile_path: src/frontend/Dockerfile
       context_path: src/frontend
+      push_to_ecr: ${{ github.event_name == 'push' }}
     secrets: inherit
 
   build-loadgenerator:
@@ -174,6 +180,7 @@ jobs:
       language: python
       dockerfile_path: src/loadgenerator/Dockerfile
       context_path: src/loadgenerator
+      push_to_ecr: ${{ github.event_name == 'push' }}
     secrets: inherit
 
   build-paymentservice:
@@ -186,6 +193,7 @@ jobs:
       language: node
       dockerfile_path: src/paymentservice/Dockerfile
       context_path: src/paymentservice
+      push_to_ecr: ${{ github.event_name == 'push' }}
     secrets: inherit
 
   build-productcatalogservice:
@@ -198,6 +206,7 @@ jobs:
       language: go
       dockerfile_path: src/productcatalogservice/Dockerfile
       context_path: src/productcatalogservice
+      push_to_ecr: ${{ github.event_name == 'push' }}
     secrets: inherit
 
   build-recommendationservice:
@@ -210,6 +219,7 @@ jobs:
       language: python
       dockerfile_path: src/recommendationservice/Dockerfile
       context_path: src/recommendationservice
+      push_to_ecr: ${{ github.event_name == 'push' }}
     secrets: inherit
 
   build-shippingservice:
@@ -222,4 +232,5 @@ jobs:
       language: go
       dockerfile_path: src/shippingservice/Dockerfile
       context_path: src/shippingservice
+      push_to_ecr: ${{ github.event_name == 'push' }}
     secrets: inherit
