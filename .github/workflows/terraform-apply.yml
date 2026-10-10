@@ -85,7 +85,7 @@ jobs:
         run: terraform validate -no-color
 
       - name: Terraform Plan
-        run: terraform plan -no-color -input=false -out=tfplan
+        run: terraform plan -no-color -input=false -var-file=terraform.tfvars.example -out=tfplan
 
       - name: Terraform Apply
         run: terraform apply -auto-approve -input=false tfplan
@@ -101,8 +101,9 @@ jobs:
   # ─────────────────────────────────────────
   apply-staging:
     name: Apply – staging environment
-    needs: [detect-env, apply-dev]
-    if: needs.detect-env.outputs.staging == 'true'
+    # DISABLED: Staging environment not yet provisioned. 
+    # To enable: change 'false' to 'needs.detect-env.outputs.staging == true'
+    if: false  # needs.detect-env.outputs.staging == 'true'
     runs-on: ubuntu-latest
     environment:
       name: staging  # Requires manual approval configured in GitHub Environments
@@ -127,7 +128,7 @@ jobs:
         run: terraform init -input=false
 
       - name: Terraform Plan
-        run: terraform plan -no-color -input=false -out=tfplan
+        run: terraform plan -no-color -input=false -var-file=terraform.tfvars.example -out=tfplan
 
       - name: Terraform Apply
         run: terraform apply -auto-approve -input=false tfplan
