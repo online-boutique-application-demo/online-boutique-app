@@ -142,7 +142,7 @@ jobs:
         if: inputs.language == 'java'
         run: |
           cd src/${{ inputs.service }}
-          gradle test --no-daemon
+          ./gradlew test --no-daemon
 
       # ─────────────────────────────────────────
       # 5. Lint / Format Check
@@ -224,7 +224,7 @@ jobs:
           push: ${{ inputs.push_to_ecr == true }}
           tags: ${{ steps.meta.outputs.tags }}
           # Cache from/to ECR for faster builds
-          cache-from: type=registry,ref=${{ steps.meta.outputs.image_base }}:buildcache
+          cache-from: ${{ inputs.push_to_ecr == true && format('type=registry,ref={0}:buildcache', steps.meta.outputs.image_base) || '' }}
           cache-to: ${{ inputs.push_to_ecr == true && format('type=registry,ref={0}:buildcache,mode=max', steps.meta.outputs.image_base) || '' }}
           # Build provenance for supply chain security
           provenance: true

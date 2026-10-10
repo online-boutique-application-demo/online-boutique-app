@@ -29,7 +29,10 @@ on:
 permissions:
   id-token: write   # Required for OIDC authentication with AWS
   contents: read
-  pull-requests: write  # Allow posting plan comments on PRs
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   AWS_REGION: ap-southeast-1
@@ -114,7 +117,7 @@ jobs:
       service: cartservice
       language: dotnet
       dockerfile_path: src/cartservice/src/Dockerfile
-      context_path: src/cartservice
+      context_path: src/cartservice/src
       push_to_ecr: ${{ github.event_name == 'push' }}
     secrets: inherit
 

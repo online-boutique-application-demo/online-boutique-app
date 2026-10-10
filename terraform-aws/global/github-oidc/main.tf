@@ -157,9 +157,9 @@ resource "aws_iam_role" "github_terraform" {
           StringEquals = {
             "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
           }
-          # Only allow from main branch for apply
+          # Allow from any branch/PR for plan; apply is gated by workflow trigger rules
           StringLike = {
-            "token.actions.githubusercontent.com:sub" = "repo:${var.github_org}/${var.github_repo_app}:ref:refs/heads/main"
+            "token.actions.githubusercontent.com:sub" = "repo:${var.github_org}/${var.github_repo_app}:*"
           }
         }
       }
