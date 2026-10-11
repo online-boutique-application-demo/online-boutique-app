@@ -1,0 +1,78 @@
+# =============================================================================
+# Composite Action: Update image tags in online-boutique-config repo
+# Called by ci-service.yml after a successful push to ECR on main branch.
+# Uses yq to update the image tag in Kustomize overlays.
+# =============================================================================
+
+name: "Update Image Manifests in Config Repo"
+description: "Updates the image tag in the online-boutique-config GitOps repository"
+
+inputs:
+  service:
+    description: "Service name (e.g. frontend)"
+    required: true
+  image_tag:
+    description: "New image tag (e.g. sha-abc1234)"
+    required: true
+  image_full:
+    description: "Full image URI (registry/repo:tag)"
+    required: true
+  config_repo:
+    description: "GitHub config repo (owner/name)"
+    required: true
+  config_repo_token:
+    description: "GitHub PAT or App token with write access to config repo"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout online-boutique-config repo
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.config_repo }}
+        token: ${{ inputs.config_repo_token }}
+        path: _config_repo
+
+    - name: Install yq
+      uses: mikefarah/yq@v4.44.3
+
+    - name: Update image tag in dev overlay
+      shell: bash
+      run: |
+        CONFIG_DIR="_config_repo"
+        SERVICE="${{ inputs.service }}"
+        NEW_TAG="${{ inputs.image_tag }}"
+        IMAGE_FULL="${{ inputs.image_full }}"
+
+        echo "Updating $SERVICE to $NEW_TAG in dev overlay..."
+
+        # Update kustomization.yaml newTag for the service (dev overlay)
+        DEV_KUSTOMIZATION="$CONFIG_DIR/overlays/dev/kustomization.yaml"
+        if [[ -f "$DEV_KUSTOMIZATION" ]]; then
+          yq e "
+            (.images[] | select(.name == \"*/$SERVICE\") | .newTag) = \"$NEW_TAG\"
+          " -i "$DEV_KUSTOMIZATION"
+          echo "✅ Updated $DEV_KUSTOMIZATION"
+        else
+          echo "⚠️  No dev kustomization found at $DEV_KUSTOMIZATION – skipping"
+        fi
+
+    - name: Commit and push changes
+      shell: bash
+      run: |
+        cd _config_repo
+        git config user.name "GitHub Actions Bot"
+        git config user.email "actions@github.com"
+
+        git add .
+        if git diff --staged --quiet; then
+          echo "No changes to commit – image tag already up to date"
+        else
+          git commit -m "chore(cd): update ${{ inputs.service }} to ${{ inputs.image_tag }}
+
+          Source: ${{ github.repository }}@${{ github.sha }}
+          Workflow: ${{ github.workflow }} #${{ github.run_number }}"
+          git push
+          echo "✅ Pushed manifest update for ${{ inputs.service }}"
+        fi

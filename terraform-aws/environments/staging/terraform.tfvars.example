@@ -13,7 +13,7 @@ az_count           = 3
 single_nat_gateway = true
 
 # EKS
-cluster_version     = "1.32"
+cluster_version     = "1.36"
 node_instance_types = ["t3.medium"]
 capacity_type       = "SPOT"
 node_disk_size      = 50

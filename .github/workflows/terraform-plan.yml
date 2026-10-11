@@ -1,0 +1,224 @@
+# =============================================================================
+# Terraform Plan – PR Workflow
+# Triggered when a PR modifies terraform-aws/ files.
+# Posts a plan summary as a comment on the PR.
+# =============================================================================
+
+name: Terraform Plan (PR)
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "terraform-aws/**"
+      - ".github/workflows/terraform-plan.yml"
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write  # Allow posting plan comments
+
+env:
+  AWS_REGION: ap-southeast-1
+  TF_VERSION: "1.10.5"
+
+jobs:
+  # ─────────────────────────────────────────
+  # Detect which environments changed
+  # ─────────────────────────────────────────
+  detect-env:
+    name: Detect changed Terraform environments
+    runs-on: ubuntu-latest
+    outputs:
+      dev: ${{ steps.filter.outputs.dev }}
+      staging: ${{ steps.filter.outputs.staging }}
+      global_ecr: ${{ steps.filter.outputs.global_ecr }}
+      global_oidc: ${{ steps.filter.outputs.global_oidc }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            dev:
+              - 'terraform-aws/environments/dev/**'
+              - 'terraform-aws/modules/**'
+            staging:
+              - 'terraform-aws/environments/staging/**'
+              - 'terraform-aws/modules/**'
+            global_ecr:
+              - 'terraform-aws/global/ecr/**'
+            global_oidc:
+              - 'terraform-aws/global/github-oidc/**'
+
+  # ─────────────────────────────────────────
+  # Terraform Plan – Dev
+  # ─────────────────────────────────────────
+  plan-dev:
+    name: Plan – dev environment
+    needs: detect-env
+    if: needs.detect-env.outputs.dev == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform-aws/environments/dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC – Terraform role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::798836978890:role/online-boutique-github-terraform
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Format Check
+        id: fmt
+        run: terraform fmt -check -recursive ../../terraform-aws
+        continue-on-error: true
+
+      - name: Terraform Init
+        id: init
+        run: terraform init -input=false
+
+      - name: Terraform Validate
+        id: validate
+        run: terraform validate -no-color
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          terraform plan -no-color -input=false -var-file=terraform.tfvars.example -out=tfplan 2>&1 | tee plan.txt
+          echo "exitcode=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Post Plan Comment to PR
+        uses: actions/github-script@v7
+        env:
+          PLAN: ${{ steps.plan.outcome }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('terraform-aws/environments/dev/plan.txt', 'utf8');
+            const maxLen = 65000;
+            const truncated = plan.length > maxLen ? plan.substring(0, maxLen) + '\n\n... (truncated)' : plan;
+
+            const output = `### 🏗️ Terraform Plan – \`dev\`
+            
+            | Step | Result |
+            |------|--------|
+            | Format 🖌 | \`${{ steps.fmt.outcome }}\` |
+            | Init ⚙️ | \`${{ steps.init.outcome }}\` |
+            | Validate 🤖 | \`${{ steps.validate.outcome }}\` |
+            | Plan 📋 | \`${{ steps.plan.outcome }}\` |
+            
+            <details><summary>Show Plan</summary>
+            
+            \`\`\`hcl
+            ${truncated}
+            \`\`\`
+            
+            </details>
+            
+            *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
+
+            // Find existing comment to update it
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const botComment = comments.find(c => c.user.type === 'Bot' && c.body.includes('Terraform Plan – `dev`'));
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: output,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: output,
+              });
+            }
+
+      - name: Fail if plan failed
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
+
+  # ─────────────────────────────────────────
+  # Terraform Plan – Staging
+  # ─────────────────────────────────────────
+  plan-staging:
+    name: Plan – staging environment
+    needs: detect-env
+    if: needs.detect-env.outputs.staging == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform-aws/environments/staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC – Terraform role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::798836978890:role/online-boutique-github-terraform
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      - name: Terraform Validate
+        run: terraform validate -no-color
+
+      - name: Terraform Plan
+        id: plan
+        run: terraform plan -no-color -input=false -var-file=terraform.tfvars.example 2>&1 | tee plan.txt
+        continue-on-error: true
+
+      - name: Post Plan Comment to PR
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('terraform-aws/environments/staging/plan.txt', 'utf8');
+            const maxLen = 65000;
+            const truncated = plan.length > maxLen ? plan.substring(0, maxLen) + '\n\n... (truncated)' : plan;
+
+            const output = `### 🏗️ Terraform Plan – \`staging\`
+            
+            <details><summary>Show Plan</summary>
+            
+            \`\`\`hcl
+            ${truncated}
+            \`\`\`
+            
+            </details>`;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: output,
+            });
+
+      - name: Fail if plan failed
+        if: steps.plan.outcome == 'failure'
+        run: exit 1

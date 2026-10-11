@@ -1,0 +1,18 @@
+# =============================================================================
+# S3 Backend Configuration for s3-backend module
+#
+# STEP 2 OF BOOTSTRAP:
+#   After running 'terraform apply' with local state to create the S3 bucket,
+#   copy this file to backend.tf, fill in your AWS Account ID, and run:
+#     terraform init -migrate-state
+# =============================================================================
+
+terraform {
+  backend "s3" {
+    bucket       = "online-boutique-tfstate-<ACCOUNT_ID>"
+    key          = "global/s3-backend/terraform.tfstate"
+    region       = "ap-southeast-1"
+    encrypt      = true
+    use_lockfile = true
+  }
+}

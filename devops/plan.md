@@ -10,7 +10,7 @@ Triển khai ứng dụng **Google Online Boutique** (12 microservices) lên h�
 online-boutique/
 ├── online-boutique-app/           # Source code + Infra (repo hiện tại)
 │   ├── src/                       # 12 microservices
-│   ├── infra/                     # Terraform modules & environments
+│   ├── terraform-aws/             # Terraform modules & environments
 │   ├── devops/                    # 📝 Documentation theo từng stage
 │   ├── .github/workflows/         # CI pipelines
 │   └── ...
@@ -63,7 +63,7 @@ graph TB
 
     subgraph "AWS Infrastructure - Terraform"
         VPC[VPC & Networking]
-        EKS["EKS Cluster (Spot, v1.32)"]
+        EKS["EKS Cluster (Spot, v1.36)"]
         ECR[ECR Repositories]
         REDIS[ElastiCache Redis]
         ALB[ALB Ingress]
@@ -138,26 +138,28 @@ devops/
 ### 1.1 Cấu trúc thư mục Terraform
 
 ```
-infra/
+terraform-aws/
 ├── environments/
 │   ├── dev/
 │   │   ├── main.tf
 │   │   ├── variables.tf
-│   │   ├── terraform.tfvars
+│   │   ├── terraform.tfvars.example
 │   │   └── outputs.tf
 │   └── staging/
 │       ├── main.tf
 │       ├── variables.tf
-│       ├── terraform.tfvars
+│       ├── terraform.tfvars.example
 │       └── outputs.tf
 ├── modules/
-│   ├── vpc/                      # VPC, Subnets, NAT, IGW
-│   ├── eks/                      # EKS Cluster, Node Groups (Spot), IRSA
+│   ├── vpc/                      # VPC, Subnets, NAT, IGW, Flow Logs
+│   ├── eks/                      # EKS Cluster, Node Groups (Spot), Addons
 │   ├── ecr/                      # ECR Repositories cho 11 services
-│   ├── elasticache/              # Redis cho CartService
+│   ├── elasticache/              # Redis cho CartService (Multi-AZ)
 │   └── irsa/                     # IAM Roles for Service Accounts
 └── global/
-    └── s3-backend/               # Bootstrap S3 + DynamoDB
+    ├── s3-backend/               # Bootstrap S3 state backend
+    ├── ecr/                      # ECR repos (shared across envs)
+    └── github-oidc/              # GitHub Actions OIDC + IAM roles
 ```
 
 ### 1.2 Chi tiết tài nguyên AWS
@@ -165,16 +167,15 @@ infra/
 | Tài nguyên | Cấu hình | Ghi chú |
 |------------|----------|---------|
 | **VPC** | 3 AZs, Public/Private/DB Subnets, NAT Gateway | High availability |
-| **EKS** | **v1.32**, Managed Node Groups (**Spot** – t3.medium x3) | IRSA, KMS encryption, **Spot để tiết kiệm chi phí** |
-| **ECR** | 11 repositories (1/service) | Lifecycle policy, scan on push |
+| **EKS** | **v1.36**, Managed Node Groups (**Spot** – t3.medium x3) | IRSA, KMS encryption, VPC CNI prefix delegation, **Spot để tiết kiệm chi phí** |
+| **ECR** | 11 repositories (1/service) | Lifecycle policy, scan on push, managed globally |
 | **ElastiCache** | Redis 7.x, Multi-AZ, Encryption at rest | Thay thế in-cluster Redis |
-| **S3** | Terraform state bucket | Versioning + KMS encryption |
-| **DynamoDB** | State locking table | Prevent concurrent apply |
-| **IAM** | EKS cluster role, node role, IRSA roles | Least privilege |
+| **S3** | Terraform state bucket | Versioning + KMS encryption + S3 native locking |
+| **IAM** | EKS cluster role, node role, IRSA roles, GitHub OIDC | Least privilege |
 | **ALB** | AWS Load Balancer Controller (via IRSA) | Ingress cho Istio Gateway |
 
 > [!IMPORTANT]
-> **EKS v1.32** được chọn vì AWS thông báo v1.31 sẽ ngừng hỗ trợ từ ngày 26/11/2026.
+> **EKS v1.36** được chọn vì nằm trong Standard Support đến 08/2027 (v1.32 trở xuống đã vào Extended Support, tính phí ~6x).
 > **Spot Instances** giúp tiết kiệm ~60-70% chi phí so với On-Demand.
 
 ### 1.3 Cấu hình Environment
@@ -191,11 +192,13 @@ infra/
 
 ### 1.4 Deliverables
 - [ ] Module VPC với 3 tầng subnet (public, private, database)
-- [ ] Module EKS v1.32 với Spot managed node groups và add-ons
-- [ ] Module ECR với lifecycle policies
-- [ ] Module ElastiCache Redis
+- [ ] Module EKS v1.36 với Spot managed node groups, VPC CNI prefix delegation và pinned add-ons
+- [ ] Module ECR với lifecycle policies (global root module)
+- [ ] Module ElastiCache Redis (Multi-AZ)
 - [ ] Module IRSA (AWS LB Controller, Cluster Autoscaler)
-- [ ] Remote state backend (S3 + DynamoDB)
+- [ ] Remote state backend (S3 + native locking)
+- [ ] GitHub Actions OIDC provider + IAM roles
+- [ ] VPC Flow Logs
 - [ ] Environment configs cho dev và staging
 - [ ] Outputs: cluster endpoint, ECR URIs, Redis endpoint, VPC ID
 - [ ] 📝 Documentation: `devops/stage-1-terraform.md`
@@ -261,12 +264,12 @@ graph LR
 | Update Manifests | `yq` / custom script | Cập nhật image tag trong **online-boutique-config** repo |
 
 #### `terraform-plan.yml`
-- **Trigger:** PR thay đổi `infra/`
+- **Trigger:** PR thay đổi `terraform-aws/`
 - Chạy `terraform fmt -check`, `terraform validate`, `terraform plan`
 - Comment plan output vào PR
 
 #### `terraform-apply.yml`
-- **Trigger:** Merge vào `main` có thay đổi `infra/`
+- **Trigger:** Merge vào `main` có thay đổi `terraform-aws/`
 - Chạy `terraform apply -auto-approve`
 - Chỉ chạy trên branch `main`
 
@@ -549,8 +552,7 @@ graph LR
     end
 
     subgraph "CI Pipeline - SAST"
-        D[Semgrep]
-        E[CodeQL]
+        D[SonarQube]
     end
 
     subgraph "CI Pipeline - Container"
@@ -568,6 +570,7 @@ graph LR
     end
 
     A --> B --> D --> F --> G
+    C --> D
     G --> I
     F --> H
 ```
@@ -605,25 +608,19 @@ graph LR
 
 | Tool | Ngôn ngữ hỗ trợ | Tích hợp |
 |------|-----------------|----------|
-| **Semgrep** | Go, Python, Java, C#, JS/TS | GitHub Actions, SARIF upload |
-| **CodeQL** | Go, Python, Java, JS | GitHub native |
+| **SonarQube** | Go, Python, Java, C#, JS/TS | GitHub Actions, SonarQube Scanner |
+
+> [!NOTE]
+> SonarQube thay thế Semgrep + CodeQL, cung cấp cả SAST, code quality, code coverage trong một nền tảng duy nhất.
+> Sử dụng SonarCloud (free cho public repos) hoặc self-host trên EKS.
 
 **Workflow:**
 ```yaml
-- name: SAST - Semgrep Scan
-  uses: semgrep/semgrep-action@v1
-  with:
-    config: >-
-      p/default
-      p/owasp-top-ten
-      p/golang
-      p/python
-      p/javascript
-      p/java
-      p/csharp
-
-- name: SAST - CodeQL Analysis
-  uses: github/codeql-action/analyze@v3
+- name: SAST - SonarQube Scan
+  uses: SonarSource/sonarqube-scan-action@v5
+  env:
+    SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 ```
 
 #### 🐳 Container Security
@@ -689,8 +686,7 @@ graph TD
 ### 6.4 Deliverables
 - [ ] Trivy filesystem scan (SCA) tích hợp trong CI
 - [ ] Dependabot config cho tất cả services
-- [ ] Semgrep SAST scan với custom rules
-- [ ] CodeQL analysis workflows
+- [ ] SonarQube SAST scan tích hợp vào CI pipeline
 - [ ] Trivy image scan sau Docker build
 - [ ] Hadolint Dockerfile linting
 - [ ] Cosign image signing
@@ -742,7 +738,7 @@ graph TD
 
 | Stage | Nội dung | Thời gian | Dependencies |
 |-------|----------|-----------|-------------|
-| **1** | Terraform – Hạ tầng AWS (EKS Spot v1.32) | 3-4 ngày | Không |
+| **1** | Terraform – Hạ tầng AWS (EKS Spot v1.36) | 3-4 ngày | Không |
 | **2** | CI – GitHub Actions | 3-4 ngày | Stage 1 (cần ECR URIs) |
 | **3** | CD – ArgoCD + GitOps (online-boutique-config) | 2-3 ngày | Stage 1 (cần EKS) |
 | **4** | Service Mesh – Istio + Kiali | 2-3 ngày | Stage 1 (cần EKS) |
@@ -756,7 +752,7 @@ graph TD
 
 ```mermaid
 graph LR
-    S1["Stage 1: Terraform\n(EKS Spot v1.32)"] --> S2[Stage 2: CI/GitHub Actions]
+    S1["Stage 1: Terraform\n(EKS Spot v1.36)"] --> S2[Stage 2: CI/GitHub Actions]
     S1 --> S3["Stage 3: ArgoCD\n(online-boutique-config)"]
     S1 --> S4["Stage 4: Istio + Kiali"]
     S4 --> S5[Stage 5: Monitoring]

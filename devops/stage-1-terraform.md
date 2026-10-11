@@ -14,24 +14,28 @@ Stage 1 thiết lập toàn bộ hạ tầng AWS bằng Terraform với cấu tr
 
 ```
 terraform-aws/
-├── global/s3-backend/        # State backend bootstrap
+├── global/
+│   ├── s3-backend/              # State backend bootstrap
+│   ├── ecr/                     # ECR repos (shared globally)
+│   └── github-oidc/             # GitHub Actions OIDC + IAM
 ├── modules/
-│   ├── vpc/                  # 3-tier networking
-│   ├── eks/                  # Kubernetes cluster
-│   ├── ecr/                  # Container registry
-│   ├── elasticache/          # Redis cache
-│   └── irsa/                 # IAM for K8s service accounts
+│   ├── vpc/                     # 3-tier networking + flow logs
+│   ├── eks/                     # Kubernetes cluster + addons
+│   ├── ecr/                     # Container registry
+│   ├── elasticache/             # Redis cache (Multi-AZ)
+│   └── irsa/                    # IAM for K8s service accounts
 └── environments/
-    ├── dev/                  # Dev config
-    └── staging/              # Staging config
+    ├── dev/                     # Dev config
+    └── staging/                 # Staging config
 ```
 
 ## 3. Quyết Định Thiết Kế
 
-### 3.1 EKS v1.32 + Spot Instances
-- **v1.32** được chọn vì v1.31 sẽ hết support từ 26/11/2026
+### 3.1 EKS v1.36 + Spot Instances
+- **v1.36** được chọn vì nằm trong Standard Support đến 08/2027 (v1.32 trở xuống đã vào Extended Support, tính phí control plane ~6x)
 - **Spot instances** giúp tiết kiệm ~60-70% chi phí so với On-Demand
-- Cluster Autoscaler IRSA role đã được chuẩn bị để handle Spot interruptions
+- **VPC CNI prefix delegation** được bật để tăng max pods/node từ 17 lên ~110 (cần thiết cho các stage sau)
+- Cluster Autoscaler IRSA role đã được chuẩn bị
 
 ### 3.2 VPC 3-tier Subnets
 - **Public**: ALB, NAT Gateway, Istio Ingress Gateway
@@ -53,11 +57,20 @@ terraform-aws/
 - Sử dụng AWS Account ID trong tên bucket (`online-boutique-tfstate-<ACCOUNT_ID>`)
 - Tránh lỗi trùng tên S3 bucket (S3 bucket names là globally unique)
 
-### 3.6 ECR chỉ tạo ở Dev
+### 3.6 ECR tách ra global root module
 - ECR repositories được share giữa dev và staging (cùng account)
-- Staging environment không tạo lại ECR để tránh duplicate
+- Đặt ở `global/ecr/` với state riêng để `terraform destroy` dev không ảnh hưởng images
 
-### 3.7 VPC CIDR khác nhau
+### 3.7 GitHub Actions OIDC
+- IAM OIDC provider cho phép GitHub Actions authenticate không cần access key dài hạn
+- CI role: ECR push + EKS describe, scoped theo repo
+- Terraform role: admin access, giới hạn chỉ main branch
+
+### 3.8 S3 Native State Locking
+- Sử dụng `use_lockfile = true` trực tiếp trên S3 (tính năng native locking của Terraform >= 1.10).
+- Không cần tạo và duy trì bảng DynamoDB table riêng cho state locking, giúp giảm chi phí và đơn giản hóa kiến trúc.
+
+### 3.9 VPC CIDR khác nhau
 - Dev: `10.0.0.0/16`
 - Staging: `10.1.0.0/16`
 - Tránh conflicts nếu cần VPC peering sau này
@@ -74,7 +87,6 @@ Module bootstrap tạo hạ tầng cho việc quản lý Terraform state từ xa
 | `aws_s3_bucket_versioning` | `terraform_state` | Bật **versioning** cho state bucket – cho phép rollback về state cũ nếu có lỗi khi `terraform apply`. |
 | `aws_s3_bucket_server_side_encryption_configuration` | `terraform_state` | Mã hóa state files bằng **AWS KMS** (Server-Side Encryption). State file chứa thông tin nhạy cảm (endpoints, ARNs), cần được bảo vệ. |
 | `aws_s3_bucket_public_access_block` | `terraform_state` | **Chặn hoàn toàn public access** – block ACLs, policies, và restrict public buckets. Đảm bảo state file không bao giờ bị public. |
-| `aws_dynamodb_table` | `terraform_locks` | **State locking** – ngăn 2 người chạy `terraform apply` cùng lúc. Dùng DynamoDB PAY_PER_REQUEST (không tốn phí khi không dùng). Hash key `LockID` là convention của Terraform S3 backend. |
 | `data.aws_caller_identity` | `current` | Lấy **AWS Account ID** hiện tại để tạo tên S3 bucket duy nhất, không cần nhập thủ công. |
 
 ---
@@ -92,7 +104,6 @@ Tạo mạng ảo riêng (Virtual Private Cloud) với kiến trúc **3 tầng s
 | `aws_subnet.public` | `public[0-2]` | **3 Public Subnets** (1/AZ) – nơi đặt ALB và NAT Gateway. Bật `map_public_ip_on_launch` để tài nguyên trong subnet này có IP public. Tagged `kubernetes.io/role/elb=1` để AWS LB Controller tự động tìm subnet khi tạo internet-facing ALB. |
 | `aws_subnet.private` | `private[0-2]` | **3 Private Subnets** (1/AZ) – nơi chạy **EKS worker nodes**. Không có public IP, chỉ truy cập internet qua NAT Gateway. Tagged `kubernetes.io/role/internal-elb=1` cho internal load balancer. |
 | `aws_subnet.database` | `database[0-2]` | **3 Database Subnets** (1/AZ) – nơi đặt **ElastiCache Redis**. Hoàn toàn **isolated** (không có route ra internet), chỉ cho phép traffic nội bộ từ private subnets. |
-| `aws_db_subnet_group` | `database` | **Subnet Group** gom 3 database subnets – ElastiCache yêu cầu subnet group để biết nên đặt Redis nodes ở AZ nào. |
 | `aws_eip` | `nat[0]` | **Elastic IP** cho NAT Gateway – IP tĩnh để traffic outbound từ private subnets luôn đi qua cùng 1 IP (quan trọng cho whitelist firewall). |
 | `aws_nat_gateway` | `main[0]` | **NAT Gateway** – cho phép EKS nodes trong private subnets truy cập internet (pull Docker images, gọi AWS APIs) mà không cần public IP. Dùng **single NAT** để tiết kiệm chi phí (~$33/tháng thay vì ~$99/tháng cho 3 NATs). |
 | `aws_route_table.public` | `public` | **Route table cho public subnets** – route `0.0.0.0/0` đến Internet Gateway. Tất cả 3 public subnets dùng chung route table này. |
@@ -129,10 +140,10 @@ Tạo mạng ảo riêng (Virtual Private Cloud) với kiến trúc **3 tầng s
 
 ### 4.2 EKS Module (`modules/eks/`)
 
-Tạo Amazon EKS cluster v1.32 với Spot managed node groups. Module được chia thành 3 files:
+Tạo Amazon EKS cluster v1.36 với Spot managed node groups và VPC CNI prefix delegation. Module được chia thành 3 files:
 - **`main.tf`** – Cluster và node group
 - **`iam.tf`** – IAM roles và OIDC provider
-- **`addons.tf`** – EKS managed add-ons
+- **`addons.tf`** – EKS managed add-ons (pinned versions, prefix delegation)
 
 #### Resources – `main.tf`
 
@@ -141,10 +152,8 @@ Tạo Amazon EKS cluster v1.32 với Spot managed node groups. Module được c
 | `aws_kms_key` | `eks` | **KMS Key** cho mã hóa Kubernetes Secrets bên trong cluster. Bật `enable_key_rotation = true` để tự động xoay key hàng năm theo best practice. |
 | `aws_kms_alias` | `eks` | **Alias** cho KMS key (ví dụ: `alias/online-boutique-dev-eks-secrets`) – dễ nhận diện trong AWS Console. |
 | `aws_cloudwatch_log_group` | `cluster` | **CloudWatch Log Group** nhận logs từ EKS control plane. Retention 30 ngày. Logs bao gồm: API server, audit, authenticator, controller manager, scheduler. |
-| `aws_security_group` | `cluster` | **Security Group** cho EKS control plane – kiểm soát traffic giữa control plane và worker nodes. Dùng `create_before_destroy` để tránh downtime khi recreate. |
-| `aws_security_group_rule` | `cluster_egress` | Cho phép **tất cả outbound traffic** từ control plane (cần thiết để control plane giao tiếp với worker nodes và AWS APIs). |
-| `aws_eks_cluster` | `main` | **EKS Cluster** chính – version 1.32, bật private + public endpoint, KMS encryption cho secrets, logging đầy đủ 5 loại. Chạy trên cả public + private subnets để đảm bảo HA. |
-| `aws_eks_node_group` | `main` | **Managed Node Group** dùng **Spot instances** (t3.medium). Scaling: min 2 → desired 3 → max 5 nodes. `max_unavailable = 1` để rolling update không gây gián đoạn. `ignore_changes` cho `desired_size` vì Cluster Autoscaler sẽ tự điều chỉnh. |
+| `aws_eks_cluster` | `main` | **EKS Cluster** chính – version 1.36, bật private endpoint, KMS encryption cho secrets, logging đầy đủ 5 loại. Control plane ENIs chỉ đặt ở private subnets (HA từ 3 AZs). Dùng `authentication_mode = "API"` cho EKS access entries. |
+| `aws_eks_node_group` | `main` | **Managed Node Group** dùng **Spot instances** (t3.medium, AMI AL2023). Scaling: min 2 → desired 3 → max 5 nodes. `depends_on` vpc-cni addon để nhận max-pods theo prefix delegation. |
 
 #### Resources – `iam.tf`
 
@@ -159,15 +168,18 @@ Tạo Amazon EKS cluster v1.32 với Spot managed node groups. Module được c
 | policy attachment | `AmazonEC2ContainerRegistryReadOnly` | Cho phép nodes **pull Docker images** từ ECR. |
 | `data.tls_certificate` | `eks` | Lấy TLS certificate từ OIDC issuer URL của EKS – cần cho xác thực OIDC provider. |
 | `aws_iam_openid_connect_provider` | `eks` | **OIDC Provider** – nền tảng cho **IRSA** (IAM Roles for Service Accounts). Cho phép Kubernetes ServiceAccounts assume IAM roles mà không cần access keys. |
+| `aws_eks_access_entry` | `cluster_creator` | **EKS Access Entry** – tự động đăng ký IAM principal (user hoặc role) thực hiện `terraform apply` vào hệ thống xác thực của EKS. |
+| `aws_eks_access_policy_association` | `cluster_creator` | **EKS Access Policy Association** – gắn quyền `AmazonEKSClusterAdminPolicy` cho Access Entry trên để người apply có toàn quyền admin cluster qua `kubectl`. |
 
 #### Resources – `addons.tf`
 
 | Resource | Tên Resource | Mục đích |
 |----------|-------------|----------|
-| `aws_eks_addon` | `vpc_cni` | **Amazon VPC CNI** – plugin networking cấp IP từ VPC subnet cho mỗi pod. Mỗi pod nhận IP thực trong VPC, cho phép giao tiếp trực tiếp với các AWS services (ElastiCache, ALB). |
-| `aws_eks_addon` | `coredns` | **CoreDNS** – DNS server trong cluster. Cho phép pods resolve tên service (ví dụ: `cartservice.default.svc.cluster.local` → IP). |
-| `aws_eks_addon` | `kube_proxy` | **kube-proxy** – duy trì network rules trên mỗi node, cho phép traffic đến ClusterIP services được forward đến đúng pods. |
-| `aws_eks_addon` | `ebs_csi_driver` | **EBS CSI Driver** – cho phép pods mount EBS volumes (PersistentVolumeClaims). Cần thiết cho stateful workloads (Prometheus, Grafana data). Dùng IRSA role riêng. |
+| `data.aws_eks_addon_version` | `this["*"]` | **Pin addon version** – lấy version mới nhất tương thích với cluster version, đảm bảo reproducible deploys. |
+| `aws_eks_addon` | `vpc_cni` | **Amazon VPC CNI** – plugin networking cấp IP từ VPC subnet cho mỗi pod. Bật **prefix delegation** (`ENABLE_PREFIX_DELEGATION=true`) để tăng max pods/node từ 17 lên ~110. Tạo **trước** node group. |
+| `aws_eks_addon` | `kube_proxy` | **kube-proxy** – duy trì network rules trên mỗi node. Tạo **trước** node group cùng với vpc-cni. |
+| `aws_eks_addon` | `coredns` | **CoreDNS** – DNS server trong cluster. Tạo **sau** node group (cần compute). |
+| `aws_eks_addon` | `ebs_csi_driver` | **EBS CSI Driver** – cho phép pods mount EBS volumes (PersistentVolumeClaims). Dùng IRSA role riêng. Tạo **sau** node group. |
 | `aws_iam_role` | `ebs_csi` | **IRSA Role** cho EBS CSI Driver – cho phép driver tạo/xóa/attach EBS volumes mà không cần gắn permissions lên node role. |
 
 ---
@@ -272,25 +284,74 @@ Tạo **IAM Roles for Service Accounts** – cơ chế cho phép Kubernetes pods
 
 ## 6. Hướng Dẫn Sử Dụng
 
-### Bootstrap (chạy 1 lần)
+### 1. Bootstrap State Backend (Quy trình 2 bước)
+
+Terraform cần S3 bucket để lưu remote state, nhưng S3 bucket này lại được quản lý bởi chính Terraform. Để giải quyết bài toán "con gà - quả trứng" này, quá trình bootstrap tuân theo quy trình 2 bước với pattern `backend.tf.example`:
+
+**Bước 1.1: Tạo S3 Bucket bằng Local State**
 ```bash
 cd terraform-aws/global/s3-backend
+terraform init
+terraform apply
+```
+- Lệnh này khởi tạo Terraform với **local backend** (do chưa có file `backend.tf`).
+- Terraform sẽ tạo S3 bucket `online-boutique-tfstate-<ACCOUNT_ID>` với KMS encryption, bucket versioning và chặn public access hoàn toàn.
+- Output trả về `aws_account_id` và `state_bucket_name`.
+
+**Bước 1.2: Di chuyển Local State lên S3 Backend (S3 Native Locking)**
+```bash
+# Copy file cấu hình mẫu backend.tf.example thành backend.tf
+cp backend.tf.example backend.tf
+
+# Thay thế <ACCOUNT_ID> trong backend.tf bằng Account ID hiển thị ở output Bước 1.1
+# Tiến hành migrate state từ máy local lên S3 bucket:
+terraform init -migrate-state
+```
+- Lệnh `terraform init -migrate-state` sẽ copy file `terraform.tfstate` từ máy local lên S3 bucket tại key `global/s3-backend/terraform.tfstate`.
+- File `backend.tf` đã được cấu hình trong `.gitignore` để tránh commit đè account ID cá nhân lên git repository.
+
+> **Lưu ý quan trọng khi triển khai trên AWS Account mới**:
+> Khi người khác clone repository này và triển khai trên AWS Account của họ, trước khi chạy `terraform init` ở các module tiếp theo (`global/ecr`, `global/github-oidc`, `environments/dev`, `environments/staging`), cần cập nhật giá trị `bucket = "online-boutique-tfstate-<ACCOUNT_ID>"` trong khối `backend "s3"` của từng module bằng AWS Account ID thực tế của họ.
+
+### 2. Create ECR Repositories
+
+```bash
+cd terraform-aws/global/ecr
 terraform init && terraform apply
 ```
 
-### Deploy environment
+### 3. Setup GitHub OIDC (for CI/CD)
+
+```bash
+cd terraform-aws/global/github-oidc
+terraform init && terraform apply
+```
+
+### 4. Deploy Dev Environment
+
 ```bash
 cd terraform-aws/environments/dev
-# Sao chép file example và điều chỉnh giá trị
 cp terraform.tfvars.example terraform.tfvars
-# Sửa <ACCOUNT_ID> trong main.tf
 terraform init
-terraform plan -out=tfplan
-terraform apply tfplan
+terraform plan
+terraform apply
+```
+
+### 5. Configure kubectl
+
+```bash
+aws eks update-kubeconfig --region ap-southeast-1 --name online-boutique-dev
 ```
 
 ## 7. Bài Học Kinh Nghiệm
 
 1. **`*.tfvars` pattern**: Dùng `terraform.tfvars.example` để commit mẫu config, người dùng tự copy sang `terraform.tfvars` (bị gitignore) và điền giá trị thực tế.
-2. **EKS add-ons cần node group**: Add-ons như CoreDNS cần ít nhất 1 node đang chạy, nên phải `depends_on` node group.
+2. **VPC CNI prefix delegation**: Phải cài addon vpc-cni **trước** node group để node nhận max-pods đúng khi bootstrap.
 3. **KMS key rotation**: Bật `enable_key_rotation = true` cho KMS key dùng encrypt EKS secrets.
+4. **ECR tách global**: ECR repos phải nằm ngoài state của environment để `terraform destroy dev` không xóa images mà staging đang dùng.
+5. **EKS-managed cluster SG**: Dùng security group do EKS tự tạo (gắn cho cả control plane lẫn managed nodes) thay vì tạo SG riêng chỉ gắn vào control plane.
+6. **S3 native locking**: Từ Terraform >= 1.10, dùng `use_lockfile = true` thay cho DynamoDB table.
+7. **GitHub OIDC**: Dùng OIDC federation thay vì access key dài hạn cho CI/CD.
+8. **Pattern `backend.tf.example` cho Bootstrap State**: Tách khối cấu hình `backend` ra `backend.tf.example` và đưa `backend.tf` vào `.gitignore` trong module bootstrap. Nhờ đó, người mới clone repo chạy lần đầu sẽ tự động dùng local state để tạo S3 bucket mà không bị lỗi thiếu bucket; sau khi tạo xong chỉ cần copy sang `backend.tf` và chạy `terraform init -migrate-state`.
+9. **Tự động hóa EKS Access Entries**: Khi dùng `authentication_mode = "API"`, để tránh lỗi 401 khi chạy `kubectl`, cấu hình `aws_eks_access_entry` và `aws_eks_access_policy_association` với `data.aws_caller_identity.current.arn` trực tiếp trong Terraform. Nhờ vậy, bất kỳ ai (hoặc CI/CD pipeline) khi chạy `terraform apply` đều tự động được cấp quyền Cluster Admin mà không cần chạy lệnh AWS CLI thủ công.
+

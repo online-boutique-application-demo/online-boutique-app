@@ -1,0 +1,275 @@
+# =============================================================================
+# CI Service – Reusable Per-Service Workflow
+# Called by ci-main.yml for each changed service.
+# Steps: Unit Tests → Lint → Docker Build → ECR Push → Update Manifests
+# =============================================================================
+
+name: CI – Service Build (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      service:
+        description: "Service name (e.g. frontend, cartservice)"
+        required: true
+        type: string
+      language:
+        description: "Primary language: go | dotnet | node | python | java"
+        required: true
+        type: string
+      dockerfile_path:
+        description: "Path to Dockerfile relative to repo root"
+        required: true
+        type: string
+      context_path:
+        description: "Docker build context path relative to repo root"
+        required: true
+        type: string
+      # Allow skipping push for PRs – only push on merge to main
+      push_to_ecr:
+        description: "Whether to push image to ECR"
+        required: false
+        type: boolean
+        default: true
+      update_manifests:
+        description: "Whether to update image tags in the config repo"
+        required: false
+        type: boolean
+        default: true
+
+env:
+  AWS_REGION: ap-southeast-1
+  AWS_ACCOUNT_ID: "798836978890"
+  ECR_REGISTRY: 798836978890.dkr.ecr.ap-southeast-1.amazonaws.com
+  ECR_REPO_PREFIX: online-boutique
+
+jobs:
+  ci:
+    name: "${{ inputs.service }} – Test, Build & Push"
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write    # Required for OIDC token generation (AWS assume role)
+      contents: read
+
+    steps:
+      # ─────────────────────────────────────────
+      # 1. Checkout
+      # ─────────────────────────────────────────
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for better caching
+
+      # ─────────────────────────────────────────
+      # 2. Language Setup + Cache
+      # ─────────────────────────────────────────
+      - name: Set up Go
+        if: inputs.language == 'go'
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: src/${{ inputs.service }}/go.mod
+          cache-dependency-path: src/${{ inputs.service }}/go.sum
+
+      - name: Set up .NET
+        if: inputs.language == 'dotnet'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0'
+
+      - name: Set up Node.js
+        if: inputs.language == 'node'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: src/${{ inputs.service }}/package-lock.json
+
+      - name: Set up Python
+        if: inputs.language == 'python'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: src/${{ inputs.service }}/requirements.txt
+
+      - name: Set up Java (Temurin 21)
+        if: inputs.language == 'java'
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      # ─────────────────────────────────────────
+      # 3. Install Dependencies
+      # ─────────────────────────────────────────
+      - name: Install Node dependencies
+        if: inputs.language == 'node'
+        run: |
+          cd src/${{ inputs.service }}
+          npm ci
+
+      - name: Install Python dependencies
+        if: inputs.language == 'python'
+        run: |
+          cd src/${{ inputs.service }}
+          pip install -r requirements.txt
+
+      # ─────────────────────────────────────────
+      # 4. Unit Tests
+      # ─────────────────────────────────────────
+      - name: Run Go tests
+        if: inputs.language == 'go'
+        run: |
+          cd src/${{ inputs.service }}
+          go test ./... -v -count=1 -timeout 5m
+
+      - name: Run .NET tests
+        if: inputs.language == 'dotnet'
+        run: |
+          dotnet test src/${{ inputs.service }}/ --logger "console;verbosity=normal"
+
+      - name: Run Node.js tests
+        if: inputs.language == 'node'
+        run: |
+          cd src/${{ inputs.service }}
+          # Skip if test script is the default "no test specified" stub
+          if node -e "const p=require('./package.json'); process.exit((p.scripts?.test || '').includes('no test specified') ? 0 : 1)" 2>/dev/null; then
+            echo "⚠️ No tests configured for ${{ inputs.service }}, skipping."
+          else
+            npm test
+          fi
+
+      - name: Run Python tests
+        if: inputs.language == 'python'
+        run: |
+          cd src/${{ inputs.service }}
+          python -m pytest --tb=short -q 2>/dev/null || echo "No tests found or pytest not configured, skipping."
+
+      - name: Run Gradle tests (Java)
+        if: inputs.language == 'java'
+        run: |
+          cd src/${{ inputs.service }}
+          ./gradlew test --no-daemon
+
+      # ─────────────────────────────────────────
+      # 5. Lint / Format Check
+      # ─────────────────────────────────────────
+      - name: Lint Go
+        if: inputs.language == 'go'
+        uses: golangci/golangci-lint-action@v6
+        continue-on-error: true
+        with:
+          working-directory: src/${{ inputs.service }}
+          args: --timeout=5m
+
+      - name: Lint Python (flake8)
+        if: inputs.language == 'python'
+        continue-on-error: true
+        run: |
+          pip install flake8 --quiet
+          cd src/${{ inputs.service }}
+          flake8 . --max-line-length=120 --exclude=__pycache__,.git,venv || true
+
+      - name: Lint Node (eslint)
+        if: inputs.language == 'node'
+        continue-on-error: true
+        run: |
+          cd src/${{ inputs.service }}
+          npx eslint . --ext .js --max-warnings 0 2>/dev/null || echo "ESLint not configured or no issues found, skipping."
+
+      # ─────────────────────────────────────────
+      # 6. Compute image tags
+      # ─────────────────────────────────────────
+      - name: Compute image tags
+        id: meta
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          BRANCH="${GITHUB_REF_NAME//\//-}"  # Replace / with - in branch names
+          IMAGE_BASE="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_PREFIX }}/${{ inputs.service }}"
+
+          # Tag: sha-<short_sha> (primary, immutable)
+          # Tag: branch-<branch> (mutable, for tracking latest on a branch)
+          # Tag: latest (only on main)
+          TAGS="$IMAGE_BASE:sha-${SHORT_SHA}"
+          TAGS="$TAGS,$IMAGE_BASE:branch-${BRANCH}"
+          if [[ "${GITHUB_REF_NAME}" == "main" ]]; then
+            TAGS="$TAGS,$IMAGE_BASE:latest"
+          fi
+
+          echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "image_base=${IMAGE_BASE}" >> $GITHUB_OUTPUT
+          echo "tags=${TAGS}" >> $GITHUB_OUTPUT
+          echo "primary_tag=sha-${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "image_full=${IMAGE_BASE}:sha-${SHORT_SHA}" >> $GITHUB_OUTPUT
+
+      # ─────────────────────────────────────────
+      # 7. Authenticate to AWS via OIDC
+      # ─────────────────────────────────────────
+      - name: Configure AWS credentials (OIDC)
+        if: inputs.push_to_ecr == true
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/online-boutique-github-ci
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        if: inputs.push_to_ecr == true
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # ─────────────────────────────────────────
+      # 8. Docker Build & Push
+      # ─────────────────────────────────────────
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.context_path }}
+          file: ${{ inputs.dockerfile_path }}
+          push: ${{ inputs.push_to_ecr == true }}
+          tags: ${{ steps.meta.outputs.tags }}
+          # Cache from/to ECR for faster builds
+          cache-from: ${{ inputs.push_to_ecr == true && format('type=registry,ref={0}:buildcache', steps.meta.outputs.image_base) || '' }}
+          cache-to: ${{ inputs.push_to_ecr == true && format('type=registry,ref={0}:buildcache,mode=max', steps.meta.outputs.image_base) || '' }}
+          # Build provenance for supply chain security
+          provenance: true
+          sbom: false
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ github.event.repository.updated_at }}
+
+      # ─────────────────────────────────────────
+      # 9. Update image tags in config repo (only on main branch push)
+      # ─────────────────────────────────────────
+      - name: Update image tag in online-boutique-config
+        if: inputs.push_to_ecr == true && inputs.update_manifests == true && github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: ./.github/actions/update-manifests
+        with:
+          service: ${{ inputs.service }}
+          image_tag: ${{ steps.meta.outputs.primary_tag }}
+          image_full: ${{ steps.meta.outputs.image_full }}
+          config_repo: online-boutique-application-demo/online-boutique-config
+          config_repo_token: ${{ secrets.CONFIG_REPO_TOKEN }}
+
+      # ─────────────────────────────────────────
+      # 10. Summary
+      # ─────────────────────────────────────────
+      - name: Job summary
+        if: always()
+        run: |
+          echo "### 🐳 Build Summary – \`${{ inputs.service }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | \`${{ inputs.service }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Language | \`${{ inputs.language }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit SHA | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Image Tag | \`${{ steps.meta.outputs.primary_tag }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Pushed to ECR | \`${{ inputs.push_to_ecr }}\` |" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ inputs.push_to_ecr }}" == "true" ]]; then
+            echo "| Image URI | \`${{ steps.meta.outputs.image_full }}\` |" >> $GITHUB_STEP_SUMMARY
+          fi

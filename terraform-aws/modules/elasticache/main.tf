@@ -78,6 +78,7 @@ resource "aws_elasticache_replication_group" "redis" {
 
   # Auto failover requires num_cache_clusters >= 2
   automatic_failover_enabled = var.num_cache_clusters >= 2
+  multi_az_enabled           = var.num_cache_clusters >= 2
 
   apply_immediately = var.apply_immediately
 

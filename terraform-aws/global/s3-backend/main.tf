@@ -1,18 +1,20 @@
 # =============================================================================
 # Terraform State Backend Bootstrap
-# Creates S3 bucket + DynamoDB table for remote state management
+# Creates S3 bucket for remote state management (using S3 native state locking)
 #
-# USAGE:
-#   1. First run with local state:
+# USAGE (2-step bootstrap):
+#   1. Step 1: Create S3 bucket using local state:
 #      cd terraform-aws/global/s3-backend
 #      terraform init
 #      terraform apply
-#   2. Then uncomment the backend block in backend.tf and run:
+#   2. Step 2: Migrate state to S3 bucket with native state locking:
+#      cp backend.tf.example backend.tf
+#      # Fill in your AWS Account ID in backend.tf
 #      terraform init -migrate-state
 # =============================================================================
 
 terraform {
-  required_version = ">= 1.5.0"
+  required_version = ">= 1.10.0"
 
   required_providers {
     aws = {
@@ -20,15 +22,6 @@ terraform {
       version = "~> 5.0"
     }
   }
-
-  # Uncomment after first apply to migrate state to S3
-  # backend "s3" {
-  #   bucket         = "online-boutique-tfstate-<ACCOUNT_ID>"
-  #   key            = "global/s3-backend/terraform.tfstate"
-  #   region         = "ap-southeast-1"
-  #   dynamodb_table = "online-boutique-terraform-locks"
-  #   encrypt        = true
-  # }
 }
 
 provider "aws" {
@@ -89,16 +82,3 @@ resource "aws_s3_bucket_public_access_block" "terraform_state" {
   restrict_public_buckets = true
 }
 
-# -----------------------------------------------------------------------------
-# DynamoDB Table for State Locking
-# -----------------------------------------------------------------------------
-resource "aws_dynamodb_table" "terraform_locks" {
-  name         = var.lock_table_name
-  billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "LockID"
-
-  attribute {
-    name = "LockID"
-    type = "S"
-  }
-}

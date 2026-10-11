@@ -47,7 +47,7 @@ resource "aws_subnet" "public" {
   map_public_ip_on_launch = true
 
   tags = {
-    Name                                       = "${var.project_name}-${var.environment}-public-${local.azs[count.index]}"
+    Name                                        = "${var.project_name}-${var.environment}-public-${local.azs[count.index]}"
     "kubernetes.io/role/elb"                    = "1"
     "kubernetes.io/cluster/${var.cluster_name}" = "shared"
   }
@@ -64,7 +64,7 @@ resource "aws_subnet" "private" {
   availability_zone = local.azs[count.index]
 
   tags = {
-    Name                                       = "${var.project_name}-${var.environment}-private-${local.azs[count.index]}"
+    Name                                        = "${var.project_name}-${var.environment}-private-${local.azs[count.index]}"
     "kubernetes.io/role/internal-elb"           = "1"
     "kubernetes.io/cluster/${var.cluster_name}" = "shared"
   }
@@ -82,15 +82,6 @@ resource "aws_subnet" "database" {
 
   tags = {
     Name = "${var.project_name}-${var.environment}-db-${local.azs[count.index]}"
-  }
-}
-
-resource "aws_db_subnet_group" "database" {
-  name       = "${var.project_name}-${var.environment}-db-subnet-group"
-  subnet_ids = aws_subnet.database[*].id
-
-  tags = {
-    Name = "${var.project_name}-${var.environment}-db-subnet-group"
   }
 }
 
@@ -188,4 +179,75 @@ resource "aws_route_table_association" "database" {
 
   subnet_id      = aws_subnet.database[count.index].id
   route_table_id = aws_route_table.database.id
+}
+
+# -----------------------------------------------------------------------------
+# VPC Flow Logs
+# -----------------------------------------------------------------------------
+resource "aws_flow_log" "vpc" {
+  count = var.enable_flow_logs ? 1 : 0
+
+  vpc_id               = aws_vpc.main.id
+  traffic_type         = "ALL"
+  log_destination_type = "cloud-watch-logs"
+  log_destination      = aws_cloudwatch_log_group.flow_logs[0].arn
+  iam_role_arn         = aws_iam_role.flow_logs[0].arn
+
+  tags = {
+    Name = "${var.project_name}-${var.environment}-vpc-flow-logs"
+  }
+}
+
+resource "aws_cloudwatch_log_group" "flow_logs" {
+  count = var.enable_flow_logs ? 1 : 0
+
+  name              = "/aws/vpc/flow-logs/${var.project_name}-${var.environment}"
+  retention_in_days = 14
+
+  tags = {
+    Name = "${var.project_name}-${var.environment}-vpc-flow-logs"
+  }
+}
+
+resource "aws_iam_role" "flow_logs" {
+  count = var.enable_flow_logs ? 1 : 0
+
+  name = "${var.project_name}-${var.environment}-vpc-flow-logs"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "vpc-flow-logs.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "flow_logs" {
+  count = var.enable_flow_logs ? 1 : 0
+
+  name = "vpc-flow-logs"
+  role = aws_iam_role.flow_logs[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+          "logs:DescribeLogGroups",
+          "logs:DescribeLogStreams",
+        ]
+        Resource = "*"
+      }
+    ]
+  })
 }

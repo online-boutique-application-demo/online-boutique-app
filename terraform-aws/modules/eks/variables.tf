@@ -6,7 +6,7 @@ variable "cluster_name" {
 variable "cluster_version" {
   description = "Kubernetes version for the EKS cluster"
   type        = string
-  default     = "1.32"
+  default     = "1.36"
 }
 
 variable "environment" {
@@ -14,18 +14,8 @@ variable "environment" {
   type        = string
 }
 
-variable "vpc_id" {
-  description = "VPC ID where the cluster will be created"
-  type        = string
-}
-
 variable "private_subnet_ids" {
   description = "List of private subnet IDs for worker nodes"
-  type        = list(string)
-}
-
-variable "public_subnet_ids" {
-  description = "List of public subnet IDs"
   type        = list(string)
 }
 
@@ -35,16 +25,39 @@ variable "endpoint_public_access" {
   default     = true
 }
 
+variable "public_access_cidrs" {
+  description = "List of CIDR blocks allowed to access the public API endpoint. Defaults to open (suitable for a demo project)"
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
 variable "node_instance_types" {
-  description = "Instance types for the node group"
+  description = "Instance types for the node group. For Spot, list several types with the same vCPU/memory so Cluster Autoscaler sizing stays accurate and interruptions are less likely"
   type        = list(string)
   default     = ["t3.medium"]
+}
+
+variable "node_ami_type" {
+  description = "AMI type for the managed node group (AL2 is not supported on EKS >= 1.33)"
+  type        = string
+  default     = "AL2023_x86_64_STANDARD"
 }
 
 variable "capacity_type" {
   description = "Capacity type for node group (ON_DEMAND or SPOT)"
   type        = string
   default     = "SPOT"
+
+  validation {
+    condition     = contains(["ON_DEMAND", "SPOT"], var.capacity_type)
+    error_message = "capacity_type must be either ON_DEMAND or SPOT."
+  }
+}
+
+variable "enable_prefix_delegation" {
+  description = "Enable VPC CNI prefix delegation to raise the max pods per node (requires Nitro instances)"
+  type        = bool
+  default     = true
 }
 
 variable "node_disk_size" {

@@ -30,11 +30,7 @@ output "cluster_certificate_authority_data" {
   sensitive   = true
 }
 
-# ECR
-output "ecr_repository_urls" {
-  description = "Map of service name to ECR repository URL"
-  value       = module.ecr.repository_urls
-}
+# Note: ECR repository URLs are output from terraform-aws/global/ecr/
 
 # ElastiCache
 output "redis_connection_string" {
