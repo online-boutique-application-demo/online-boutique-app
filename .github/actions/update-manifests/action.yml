@@ -66,7 +66,7 @@ runs:
           echo "⚠️  No dev kustomization found at $DEV_KUSTOMIZATION – skipping"
         fi
 
-    - name: Commit and push changes
+    - name: Commit and push changes (with retry for concurrent pushes)
       shell: bash
       run: |
         cd _config_repo
@@ -76,11 +76,28 @@ runs:
         git add .
         if git diff --staged --quiet; then
           echo "No changes to commit – image tag already up to date"
-        else
-          git commit -m "chore(cd): update ${{ inputs.service }} to ${{ inputs.image_tag }}
+          exit 0
+        fi
+
+        git commit -m "chore(cd): update ${{ inputs.service }} to ${{ inputs.image_tag }}
 
           Source: ${{ github.repository }}@${{ github.sha }}
           Workflow: ${{ github.workflow }} #${{ github.run_number }}"
-          git push
-          echo "✅ Pushed manifest update for ${{ inputs.service }}"
-        fi
+
+        # Retry loop: when multiple services push in parallel, some will fail
+        # because the remote has been updated by another service's push.
+        # We retry with git pull --rebase to incorporate the other changes.
+        MAX_RETRIES=5
+        for i in $(seq 1 $MAX_RETRIES); do
+          if git push; then
+            echo "✅ Pushed manifest update for ${{ inputs.service }} (attempt $i)"
+            exit 0
+          fi
+
+          echo "⚠️  Push failed (attempt $i/$MAX_RETRIES) – pulling latest and retrying..."
+          sleep $((i * 2))  # Exponential-ish backoff: 2s, 4s, 6s, 8s, 10s
+          git pull --rebase
+        done
+
+        echo "::error::Failed to push after $MAX_RETRIES attempts"
+        exit 1
