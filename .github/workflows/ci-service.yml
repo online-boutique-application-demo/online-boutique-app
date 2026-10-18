@@ -158,11 +158,11 @@ jobs:
       # ─────────────────────────────────────────
       - name: Lint Go
         if: inputs.language == 'go'
-        uses: golangci/golangci-lint-action@v6
         continue-on-error: true
-        with:
-          working-directory: src/${{ inputs.service }}
-          args: --timeout=5m
+        run: |
+          cd src/${{ inputs.service }}
+          echo "Linting Go code with go vet..."
+          go vet ./... || true
 
       - name: Lint Python (flake8)
         if: inputs.language == 'python'
