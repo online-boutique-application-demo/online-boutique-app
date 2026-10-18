@@ -27,6 +27,14 @@ inputs:
 runs:
   using: "composite"
   steps:
+    - name: Validate config repository token
+      shell: bash
+      run: |
+        if [[ -z "${{ inputs.config_repo_token }}" ]]; then
+          echo "::error::Secret CONFIG_REPO_TOKEN is empty or missing! Please configure this secret in repository settings to allow pushing image tags to the config repository."
+          exit 1
+        fi
+
     - name: Checkout online-boutique-config repo
       uses: actions/checkout@v4
       with:
