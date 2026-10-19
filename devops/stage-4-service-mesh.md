@@ -124,19 +124,91 @@ online-boutique-config/
 
 ---
 
-## 5. Hướng Dẫn Vận Hành & Kiểm Thử
+## 5. Hướng Dẫn Cài Đặt Chi Tiết (Installation Guide)
 
-### 5.1 Lấy Địa Chỉ URL Truy Cập Ứng Dụng (Istio Ingress Gateway)
+Dưới đây là các bước cài đặt chi tiết Istio và Kiali trên cụm EKS (áp dụng khi triển khai mới hoặc sau mỗi lần khởi tạo lại hạ tầng):
+
+### Bước 1: Cài Đặt Istio Với Internet-Facing Load Balancer
+Cài đặt Istio profile `default` và cấu hình annotation trực tiếp cho Ingress Gateway để AWS Load Balancer Controller tự động tạo Internet-facing NLB:
+
+**Trên Windows (PowerShell):**
+> 💡 *Lưu ý trong PowerShell:* Dùng dấu backtick (`` ` ``) để ngắt dòng và bọc giá trị `--set` trong cặp nháy đơn (`'...'`) để tránh lỗi phân tích cú pháp của PowerShell:
+```powershell
+istioctl install --set profile=default `
+  --set 'values.gateways.istio-ingressgateway.serviceAnnotations.service\.beta\.kubernetes\.io/aws-load-balancer-scheme=internet-facing' `
+  -y
+```
+*(Hoặc chạy trên một dòng duy nhất)*:
+```powershell
+istioctl install --set profile=default --set 'values.gateways.istio-ingressgateway.serviceAnnotations.service\.beta\.kubernetes\.io/aws-load-balancer-scheme=internet-facing' -y
+```
+
+**Trên Linux / macOS (Bash):**
+```bash
+istioctl install --set profile=default \
+  --set 'values.gateways.istio-ingressgateway.serviceAnnotations.service\.beta\.kubernetes\.io/aws-load-balancer-scheme=internet-facing' \
+  -y
+```
+
+---
+
+### Bước 2: Bật Istio Sidecar Injection & Khởi Động Lại Pods
+Gắn nhãn namespace `online-boutique` để kích hoạt tự động tiêm sidecar Envoy và khởi động lại toàn bộ deployments:
+
+**Trên cả Windows & Linux:**
+```bash
+kubectl label namespace online-boutique istio-injection=enabled --overwrite
+kubectl rollout restart deployment -n online-boutique
+```
+*Kiểm tra trạng thái rollout:*
+```bash
+kubectl get pods -n online-boutique
+# Kỳ vọng: Tất cả 11 pods đều hiển thị trạng thái 2/2 Running
+```
+
+---
+
+### Bước 3: Áp Dụng Cấu Hình Istio Bằng ArgoCD (Hoặc Kubectl)
+Sau khi repo `online-boutique-config` đã có các manifests trong thư mục `base/istio/`, áp dụng ArgoCD Application để GitOps tự động quản lý:
+
+**Trên cả Windows & Linux:**
+```bash
+kubectl apply -f argocd/apps/dev/istio-config.yaml
+```
+*(Nếu muốn áp dụng trực tiếp qua Kustomize:* `kubectl apply -k base/istio`*)*
+
+---
+
+### Bước 4: Cài Đặt Kiali Dashboard Bằng Helm
+Cài đặt Kiali Server vào namespace `istio-system` với chiến lược xác thực `anonymous`:
+
+**Trên cả Windows & Linux:**
+```bash
+helm repo add kiali https://kiali.org/helm-charts
+helm repo update
+helm upgrade --install kiali-server kiali/kiali-server \
+  --namespace istio-system \
+  --set auth.strategy="anonymous" \
+  --set server.web_fqdn="" \
+  --set external_services.prometheus.url="http://prometheus-server.monitoring:80" \
+  --set external_services.grafana.url="http://grafana.monitoring:80"
+```
+
+---
+
+## 6. Hướng Dẫn Vận Hành & Kiểm Thử (Operations & Verification Guide)
+
+### 6.1 Lấy Địa Chỉ URL Truy Cập Ứng Dụng (Istio Ingress Gateway)
 
 Do hạ tầng ephemeral thay đổi địa chỉ Load Balancer sau mỗi lần khởi tạo, sử dụng lệnh sau để lấy URL chính xác:
 
-**Trên PowerShell (Windows):**
+**Trên Windows (PowerShell):**
 ```powershell
 $INGRESS_HOST = (kubectl -n istio-system get svc istio-ingressgateway -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
 Write-Host "URL Ứng Dụng (Istio Ingress): http://$INGRESS_HOST"
 ```
 
-**Trên Bash (Linux/macOS):**
+**Trên Linux / macOS (Bash):**
 ```bash
 INGRESS_HOST=$(kubectl -n istio-system get svc istio-ingressgateway -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
 echo "URL Ứng Dụng (Istio Ingress): http://${INGRESS_HOST}"
@@ -145,17 +217,25 @@ echo "URL Ứng Dụng (Istio Ingress): http://${INGRESS_HOST}"
 Kiểm tra HTTP status code qua `curl`:
 ```bash
 curl -I http://<INGRESS_HOST>
-# Kết quả kỳ vọng: HTTP/1.1 200 OK (hoặc HTTP/2 200)
+# Kết quả kỳ vọng: HTTP/1.1 200 OK (hoặc HTTP/2 200) với header server: istio-envoy
 ```
 
 ---
 
-### 5.2 Kiểm Tra Trạng Thái Mã Hóa mTLS STRICT
+### 6.2 Kiểm Tra Trạng Thái Mã Hóa mTLS STRICT
 
 Sử dụng công cụ `istioctl` để xác minh pod `frontend` đã kích hoạt mTLS STRICT và chịu sự điều phối của các chính sách RBAC:
 
+**Trên Windows (PowerShell):**
+```powershell
+$FRONTEND_POD = (kubectl get pod -n online-boutique -l app=frontend -o jsonpath='{.items[0].metadata.name}')
+istioctl experimental describe pod "$FRONTEND_POD.online-boutique"
+```
+
+**Trên Linux / macOS (Bash):**
 ```bash
-istioctl experimental describe pod $(kubectl get pod -n online-boutique -l app=frontend -o jsonpath='{.items[0].metadata.name}').online-boutique
+FRONTEND_POD=$(kubectl get pod -n online-boutique -l app=frontend -o jsonpath='{.items[0].metadata.name}')
+istioctl experimental describe pod "${FRONTEND_POD}.online-boutique"
 ```
 
 **Kết quả kiểm tra thực tế:**
@@ -182,11 +262,11 @@ VirtualService: frontend.online-boutique
 
 ---
 
-### 5.3 Truy Cập Kiali Dashboard
+### 6.3 Truy Cập Kiali Dashboard
 
 Kiali Server được cài đặt tại namespace `istio-system` với chế độ xác thực `anonymous` (thuận tiện cho môi trường dev).
 
-Mở dashboard bằng `istioctl`:
+Mở dashboard tự động bằng `istioctl`:
 ```bash
 istioctl dashboard kiali
 ```
@@ -201,7 +281,7 @@ Sau đó truy cập trình duyệt tại địa chỉ: [http://localhost:20001/k
 
 ---
 
-### 5.4 Kiểm Tra Lưu Lượng Tải & Kết Nối Redis
+### 6.4 Kiểm Tra Lưu Lượng Tải & Kết Nối Redis
 
 1. **Kiểm tra `loadgenerator` (0% lỗi):**
    ```bash
@@ -215,40 +295,3 @@ Sau đó truy cập trình duyệt tại địa chỉ: [http://localhost:20001/k
    ```
    Kỳ vọng: Các hàm `AddItemAsync`, `GetCartAsync` phản hồi bình thường, không có lỗi timeout kết nối Redis.
 
----
-
-## 6. Quy Trình Destroy & Recreate Hàng Ngày (Ephemeral Infrastructure Guide)
-
-Do hạ tầng dev được destroy vào cuối ngày và tạo lại vào ngày hôm sau, dưới đây là quy trình chuẩn để dựng lại Stage 4 sau khi Terraform apply thành công:
-
-### Bước 1: Cài Đặt Istio Với Internet-Facing Load Balancer
-Chạy lệnh `istioctl install` với tham số cấu hình annotation trực tiếp để AWS Load Balancer Controller tự động gán internet-facing scheme:
-```bash
-istioctl install --set profile=default \
-  --set values.gateways.istio-ingressgateway.serviceAnnotations."service\.beta\.kubernetes\.io/aws-load-balancer-scheme"="internet-facing" \
-  -y
-```
-
-### Bước 2: Bật Istio Sidecar Injection & Restart Pods
-```bash
-kubectl label namespace online-boutique istio-injection=enabled --overwrite
-kubectl rollout restart deployment -n online-boutique
-```
-
-### Bước 3: Áp Dụng Cấu Hình Istio Bằng ArgoCD
-Đảm bảo repo `online-boutique-config` đã commit các manifests tại `base/istio/`. Áp dụng application:
-```bash
-kubectl apply -f argocd/apps/dev/istio-config.yaml
-```
-
-### Bước 4: Cài Đặt Kiali Dashboard Bằng Helm
-```bash
-helm repo add kiali https://kiali.org/helm-charts
-helm repo update
-helm upgrade --install kiali-server kiali/kiali-server \
-  --namespace istio-system \
-  --set auth.strategy="anonymous" \
-  --set server.web_fqdn="" \
-  --set external_services.prometheus.url="http://prometheus-server.monitoring:80" \
-  --set external_services.grafana.url="http://grafana.monitoring:80"
-```
