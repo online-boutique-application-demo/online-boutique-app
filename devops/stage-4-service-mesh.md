@@ -69,11 +69,11 @@ graph TD
 ## 3. Các Quyết Định Thiết Kế Quan Trọng
 
 ### 3.1 Thay Thế `frontend-external` Bằng Istio Ingress Gateway
-- **Hiện trạng:** Ở Stage 3, `frontend-external` là một Service kiểu `LoadBalancer` riêng biệt do AWS Load Balancer Controller cấp phát NLB.
+- **Hiện trạng:** Ở Stage 3, `frontend-external` là một Service kiểu `LoadBalancer` riêng biệt do AWS Load Balancer Controller cấp phát NLB độc lập.
 - **Giải pháp:** 
-  1. Tạo patch Kustomize (`overlays/dev/patches/frontend-service.yaml`) sử dụng directive `$patch: delete` để tự động loại bỏ Service `frontend-external`.
-  2. Bổ sung `Gateway` (`online-boutique-gateway`) lắng nghe trên port 80 tại namespace `istio-system` và `VirtualService` (`frontend`) tại namespace `online-boutique` định tuyến traffic vào Service ClusterIP `frontend:80`.
-  3. Cấu hình annotation `service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"` trên Service `istio-ingressgateway` để AWS LB Controller tạo public NLB/ALB.
+  1. **Xóa bỏ hoàn toàn Service `frontend-external`** khỏi base manifest `base/online-boutique/frontend.yaml`. Điều này giúp manifests trong sạch, không cần dùng Kustomize delete patch, và khi ArgoCD đồng bộ nhánh mới thì tự động prune Service `frontend-external` để AWS Load Balancer Controller giải phóng NLB cũ.
+  2. Bổ sung `Gateway` (`online-boutique-gateway`) lắng nghe trên port 80 tại namespace `istio-system` và `VirtualService` (`frontend`) tại namespace `online-boutique` định tuyến traffic vào Service ClusterIP nội bộ `frontend:80`.
+  3. Cấu hình annotation `service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"` trên Service `istio-ingressgateway` để AWS LB Controller tạo public NLB/ALB duy nhất làm cổng vào.
 - **Lợi ích:** Tiết kiệm chi phí (chỉ duy trì 1 Load Balancer cho toàn bộ traffic bên ngoài vào mesh), chuẩn hóa mô hình Ingress Gateway của Service Mesh.
 
 ### 3.2 Cơ Chế Least Privilege Với AuthorizationPolicy
@@ -103,7 +103,7 @@ online-boutique-config/
 │           └── istio-config.yaml           # [MỚI] ArgoCD App đồng bộ Istio manifests
 │
 ├── base/
-│   ├── online-boutique/                    # 11 microservices base manifests
+│   ├── online-boutique/                    # 11 microservices base manifests (đã xóa frontend-external)
 │   └── istio/                              # [MỚI] Istio Base Manifests
 │       ├── kustomization.yaml              # Tập hợp các manifests Istio
 │       ├── namespace.yaml                  # Định nghĩa namespace istio-system
@@ -116,11 +116,11 @@ online-boutique-config/
 │
 └── overlays/
     └── dev/
-        ├── kustomization.yaml              # Kích hoạt patch xóa frontend-external
+        ├── kustomization.yaml              # Overlay dev đồng bộ image tags & patches
         └── patches/
-            ├── cartservice-redis.yaml      # Patch inject ElastiCache Redis
-            └── frontend-service.yaml       # [MỚI] Patch xóa frontend-external Service
+            └── cartservice-redis.yaml      # Patch inject ElastiCache Redis
 ```
+
 
 ---
 
@@ -180,19 +180,42 @@ kubectl apply -f argocd/apps/dev/istio-config.yaml
 ---
 
 ### Bước 4: Cài Đặt Kiali Dashboard Bằng Helm
-Cài đặt Kiali Server vào namespace `istio-system` với chiến lược xác thực `anonymous`:
+Cài đặt Kiali Server vào namespace `istio-system` với chiến lược xác thực `anonymous`.
 
-**Trên cả Windows & Linux:**
+**Cách 1 (Khuyên dùng – Dùng file values cấu hình sẵn):**
+> Trong thư mục `base/istio/` đã chuẩn bị sẵn file `kiali-values.yaml`. Lệnh này chạy được ngay trên cả Windows (PowerShell) và Linux (Bash) mà không lo lỗi ngắt dòng:
 ```bash
 helm repo add kiali https://kiali.org/helm-charts
 helm repo update
-helm upgrade --install kiali-server kiali/kiali-server \
-  --namespace istio-system \
-  --set auth.strategy="anonymous" \
-  --set server.web_fqdn="" \
-  --set external_services.prometheus.url="http://prometheus-server.monitoring:80" \
-  --set external_services.grafana.url="http://grafana.monitoring:80"
+helm upgrade --install kiali-server kiali/kiali-server -n istio-system -f base/istio/kiali-values.yaml
 ```
+
+**Cách 2 (Dùng cờ `--set` trực tiếp trên CLI):**
+
+- **Trên Windows (PowerShell):**
+  > 💡 *Lưu ý:* PowerShell dùng dấu backtick (`` ` ``) để ngắt dòng (KHÔNG dùng `\` như Linux), hoặc chạy trên 1 dòng duy nhất:
+  ```powershell
+  helm upgrade --install kiali-server kiali/kiali-server `
+    --namespace istio-system `
+    --set auth.strategy=anonymous `
+    --set server.web_fqdn="" `
+    --set external_services.prometheus.url="http://prometheus-server.monitoring:80" `
+    --set external_services.grafana.url="http://grafana.monitoring:80"
+  ```
+  *(Hoặc chạy trên 1 dòng duy nhất)*:
+  ```powershell
+  helm upgrade --install kiali-server kiali/kiali-server --namespace istio-system --set auth.strategy=anonymous --set server.web_fqdn="" --set external_services.prometheus.url="http://prometheus-server.monitoring:80" --set external_services.grafana.url="http://grafana.monitoring:80"
+  ```
+
+- **Trên Linux / macOS (Bash):**
+  ```bash
+  helm upgrade --install kiali-server kiali/kiali-server \
+    --namespace istio-system \
+    --set auth.strategy="anonymous" \
+    --set server.web_fqdn="" \
+    --set external_services.prometheus.url="http://prometheus-server.monitoring:80" \
+    --set external_services.grafana.url="http://grafana.monitoring:80"
+  ```
 
 ---
 
