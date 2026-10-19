@@ -74,7 +74,13 @@ graph TD
   1. **Xóa bỏ hoàn toàn Service `frontend-external`** khỏi base manifest `base/online-boutique/frontend.yaml`. Điều này giúp manifests trong sạch, không cần dùng Kustomize delete patch, và khi ArgoCD đồng bộ nhánh mới thì tự động prune Service `frontend-external` để AWS Load Balancer Controller giải phóng NLB cũ.
   2. Bổ sung `Gateway` (`online-boutique-gateway`) lắng nghe trên port 80 tại namespace `istio-system` và `VirtualService` (`frontend`) tại namespace `online-boutique` định tuyến traffic vào Service ClusterIP nội bộ `frontend:80`.
   3. Cấu hình annotation `service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"` trên Service `istio-ingressgateway` để AWS LB Controller tạo public NLB/ALB duy nhất làm cổng vào.
-- **Lợi ích:** Tiết kiệm chi phí (chỉ duy trì 1 Load Balancer cho toàn bộ traffic bên ngoài vào mesh), chuẩn hóa mô hình Ingress Gateway của Service Mesh.
+- **Lợi ích & Bản chất kiến trúc:**
+  1. **Gom cổng vào khi hệ thống mở rộng (Tránh phát sinh thêm Load Balancer):** Nếu chỉ có 1 frontend duy nhất, số lượng Load Balancer là 1 đổi 1. Tuy nhiên, khi hệ thống cần public thêm các dịch vụ khác (như Kiali dashboard, Grafana/Prometheus ở Stage 5, API cho Mobile App, Admin portal...), nếu tiếp tục dùng Service type `LoadBalancer` thì mỗi dịch vụ sẽ tạo thêm 1 AWS NLB riêng biệt (khoảng ~$18/tháng/cái trên AWS). Với Istio Ingress Gateway, **toàn bộ các dịch vụ công khai đều dùng chung 1 AWS Load Balancer duy nhất**, việc chia tải theo tên miền (host) hoặc đường dẫn (path) được xử lý bằng các `VirtualService` phần mềm bên trong cụm (hoàn toàn miễn phí).
+  2. **Khả năng điều phối Layer 7 (Điều mà LoadBalancer L4 cũ không làm được):** Service kiểu LoadBalancer của Kubernetes chỉ là forwarder TCP/UDP tầng 4. Trong khi Istio Ingress Gateway là một Envoy proxy tầng 7, cho phép:
+     - **Canary Release:** Chia tỷ lệ traffic (ví dụ 90% vào v1, 10% vào v2) trực tiếp từ cổng vào.
+     - **Định tuyến thông minh:** Routing theo HTTP Header, Cookie, Path hoặc User-Agent.
+     - **Bảo mật biên:** Tích hợp kiểm tra JWT, Rate Limiting, CORS policy ngay trước khi request vào sâu bên trong cụm.
+  3. **Khép kín vòng mTLS STRICT:** Ingress Gateway là một thành phần có định danh SPIFFE chính thống trong mesh (`istio-ingressgateway-service-account`). Nhờ đó, ngay khi traffic từ bên ngoài chạm vào Gateway, kết nối từ Gateway tới pod `frontend` được mã hóa và chứng thực bằng mTLS STRICT ngay lập tức, đảm bảo tính toàn vẹn và khớp với chính sách `AuthorizationPolicy`.
 
 ### 3.2 Cơ Chế Least Privilege Với AuthorizationPolicy
 - Triển khai policy `deny-all` tại namespace `online-boutique` để chặn đứng toàn bộ traffic không được định nghĩa rõ ràng.
