@@ -219,35 +219,93 @@ helm upgrade --install kiali-server kiali/kiali-server -n istio-system -f base/i
 
 ---
 
-## 6. Hướng Dẫn Vận Hành & Kiểm Thử (Operations & Verification Guide)
+## 6. Hướng Dẫn Kiểm Thử & Nghiệm Thu Chi Tiết (Testing & Verification Guide)
 
-### 6.1 Lấy Địa Chỉ URL Truy Cập Ứng Dụng (Istio Ingress Gateway)
+Mục tiêu của giai đoạn này là xác nhận toàn bộ 11 microservices của Online Boutique đã tích hợp thành công vào Istio Service Mesh, lưu lượng Ingress đi qua Istio Ingress Gateway an toàn, chính sách bảo mật Zero-Trust (`mTLS STRICT` & `AuthorizationPolicy`) có hiệu lực đầy đủ, và kết nối ra dịch vụ ngoài mesh (AWS ElastiCache Redis) hoạt động thông suốt.
 
-Do hạ tầng ephemeral thay đổi địa chỉ Load Balancer sau mỗi lần khởi tạo, sử dụng lệnh sau để lấy URL chính xác:
+---
+
+### 6.1. Kiểm Tra Trạng Thái Pods & Sidecar Envoy (`2/2 Running`)
+
+#### Mục đích & Ý nghĩa
+Khi kích hoạt nhãn tự động tiêm sidecar (`istio-injection=enabled`) trên namespace `online-boutique`, bộ điều khiển Istio Mutating Webhook sẽ tự động chèn thêm container `istio-proxy` (Envoy) vào mỗi Pod. Việc kiểm tra trạng thái `2/2 Running` đảm bảo cả container ứng dụng chính và proxy Envoy đều đã khởi chạy và vượt qua các bài kiểm tra probe.
+
+#### Lệnh thực thi
+
+**Trên Windows (PowerShell) & Linux / macOS (Bash):**
+```bash
+# 1. Kiểm tra trạng thái toàn bộ Pods trong namespace online-boutique
+kubectl get pods -n online-boutique
+
+# 2. Kiểm tra danh sách container bên trong một Pod đại diện (ví dụ: frontend)
+kubectl get pods -n online-boutique -l app=frontend -o jsonpath='{.items[0].spec.containers[*].name}'
+```
+
+#### Kết quả kỳ vọng & Thực tế
+- Cột `READY` của tất cả 11 Pods hiển thị `2/2` và `STATUS` là `Running`:
+```text
+NAME                                     READY   STATUS    RESTARTS   AGE
+adservice-64f8c57b97-75xhs               2/2     Running   0          6h41m
+cartservice-58788df567-qx2p5             2/2     Running   0          6h41m
+checkoutservice-9b6dcddc7-l2b64          2/2     Running   0          6h41m
+currencyservice-d94474d55-crgvp          2/2     Running   0          6h41m
+emailservice-86f46c95-lnq72              2/2     Running   0          6h41m
+frontend-f989df867-tcqgn                 2/2     Running   0          6h41m
+loadgenerator-8469769b5f-8trp7           2/2     Running   0          6h41m
+paymentservice-5698b5fb79-m62sd          2/2     Running   0          6h41m
+productcatalogservice-cbf846b49-x7ppt    2/2     Running   0          6h41m
+recommendationservice-6cf7dc6dbf-47ktr   2/2     Running   0          6h41m
+shippingservice-57d7dc6f7c-m7nbc         2/2     Running   0          6h41m
+```
+- Lệnh kiểm tra container trả về đủ 2 container: `server istio-proxy`.
+
+---
+
+### 6.2. Lấy URL & Kiểm Tra Truy Cập Qua Istio Ingress Gateway
+
+#### Mục đích & Ý nghĩa
+Service `istio-ingressgateway` (loại `LoadBalancer`) tại namespace `istio-system` nhận lưu lượng HTTP từ AWS Network Load Balancer (NLB) công khai, sau đó chuyển tiếp qua `Gateway` và `VirtualService` để tới Service ClusterIP `frontend:80`. Việc kiểm tra header `server: istio-envoy` là bằng chứng xác nhận lưu lượng đã thực sự đi qua Envoy Gateway tầng 7 thay vì đi thẳng vào ứng dụng.
+
+#### Lệnh thực thi
 
 **Trên Windows (PowerShell):**
 ```powershell
-$INGRESS_HOST = (kubectl -n istio-system get svc istio-ingressgateway -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-Write-Host "URL Ứng Dụng (Istio Ingress): http://$INGRESS_HOST"
+# 1. Lấy địa chỉ DNS của AWS Load Balancer từ Ingress Gateway
+$GATEWAY_URL = (kubectl -n istio-system get service istio-ingressgateway -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+Write-Output "URL Ứng Dụng (Istio Ingress): http://$GATEWAY_URL"
+
+# 2. Kiểm tra mã phản hồi HTTP và Header máy chủ (sử dụng curl.exe của Windows)
+curl.exe -s -I "http://$GATEWAY_URL" | Select-String -Pattern "HTTP/|server:"
 ```
 
 **Trên Linux / macOS (Bash):**
 ```bash
-INGRESS_HOST=$(kubectl -n istio-system get svc istio-ingressgateway -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-echo "URL Ứng Dụng (Istio Ingress): http://${INGRESS_HOST}"
+# 1. Lấy địa chỉ DNS của AWS Load Balancer từ Ingress Gateway
+export GATEWAY_URL=$(kubectl -n istio-system get service istio-ingressgateway -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+echo "URL Ứng Dụng (Istio Ingress): http://${GATEWAY_URL}"
+
+# 2. Kiểm tra mã phản hồi HTTP và Header máy chủ
+curl -s -I "http://$GATEWAY_URL" | grep -E "HTTP/|server:"
 ```
 
-Kiểm tra HTTP status code qua `curl`:
-```bash
-curl -I http://<INGRESS_HOST>
-# Kết quả kỳ vọng: HTTP/1.1 200 OK (hoặc HTTP/2 200) với header server: istio-envoy
+#### Kết quả kỳ vọng & Thực tế
+- Trả về mã trạng thái `HTTP/1.1 200 OK` (hoặc `HTTP/2 200`) và header máy chủ xác thực `server: istio-envoy`:
+```http
+HTTP/1.1 200 OK
+server: istio-envoy
 ```
+- Khi mở URL trên trình duyệt web, giao diện cửa hàng **Online Boutique** hiển thị hoàn chỉnh (danh mục sản phẩm, banner quảng cáo, giỏ hàng).
 
 ---
 
-### 6.2 Kiểm Tra Trạng Thái Mã Hóa mTLS STRICT
+### 6.3. Kiểm Tra Mã Hóa mTLS STRICT & AuthorizationPolicy Trên Pod `frontend`
 
-Sử dụng công cụ `istioctl` để xác minh pod `frontend` đã kích hoạt mTLS STRICT và chịu sự điều phối của các chính sách RBAC:
+#### Mục đích & Ý nghĩa
+Lệnh `istioctl experimental describe pod` truy vấn trực tiếp cấu hình xDS từ Envoy proxy của Pod để xác minh 2 cơ chế bảo mật then chốt:
+1. **PeerAuthentication (`STRICT`):** Toàn bộ lưu lượng gửi tới Pod bắt buộc phải dùng chứng chỉ mTLS hợp lệ do Istiod cấp. Các kết nối văn bản thô (Plaintext) sẽ bị từ chối ngay lập tức.
+2. **AuthorizationPolicy (RBAC):** Đảm bảo Pod chỉ chấp nhận yêu cầu từ các ServiceAccount được phép (ở đây là Ingress Gateway và `loadgenerator`).
+
+#### Lệnh thực thi
 
 **Trên Windows (PowerShell):**
 ```powershell
@@ -257,15 +315,15 @@ istioctl experimental describe pod "$FRONTEND_POD.online-boutique"
 
 **Trên Linux / macOS (Bash):**
 ```bash
-FRONTEND_POD=$(kubectl get pod -n online-boutique -l app=frontend -o jsonpath='{.items[0].metadata.name}')
+export FRONTEND_POD=$(kubectl get pod -n online-boutique -l app=frontend -o jsonpath='{.items[0].metadata.name}')
 istioctl experimental describe pod "${FRONTEND_POD}.online-boutique"
 ```
 
-**Kết quả kiểm tra thực tế:**
+#### Kết quả kỳ vọng & Thực tế
 ```text
-Pod: frontend-xxxx.online-boutique
+Pod: frontend-f989df867-tcqgn.online-boutique
    Pod Revision: default
-   Pod Ports: 8080 (server), 15090 (istio-proxy)
+   Pod Ports: 8080 (server)
 --------------------
 Service: frontend.online-boutique
    Port: http 80/HTTP targets pod port 8080
@@ -282,39 +340,114 @@ Exposed on Ingress Gateway http://
 VirtualService: frontend.online-boutique
    1 HTTP route(s)
 ```
+- `Workload mTLS mode: STRICT`: Toàn bộ kết nối được mã hóa mTLS.
+- `RBAC policies`: Được bảo vệ bởi chính sách `deny-all` kết hợp `allow-frontend`.
+- `VirtualService`: Được định tuyến từ Ingress Gateway.
 
 ---
 
-### 6.3 Truy Cập Kiali Dashboard
+### 6.4. Kiểm Tra Lưu Lượng Sinh Tải Từ `loadgenerator` (0% Lỗi)
 
-Kiali Server được cài đặt tại namespace `istio-system` với chế độ xác thực `anonymous` (thuận tiện cho môi trường dev).
+#### Mục đích & Ý nghĩa
+Component `loadgenerator` sử dụng Locust liên tục gửi các tác vụ mô phỏng khách hàng thực tế (xem sản phẩm, đổi tiền tệ, thêm giỏ hàng, đặt hàng thanh toán) xuyên suốt toàn bộ chuỗi 11 microservices. Nếu bất kỳ chính sách `AuthorizationPolicy` nào bị cấp thiếu quyền (ví dụ `checkoutservice` không được phép gọi `paymentservice`), Locust sẽ ghi nhận lỗi HTTP `403 Forbidden` (RBAC access denied). Việc tỷ lệ lỗi duy trì ở mức `0.00%` chứng minh toàn bộ ma trận giao tiếp nội bộ trong mesh hoạt động hoàn hảo.
 
-Mở dashboard tự động bằng `istioctl`:
+#### Lệnh thực thi
+
+**Trên Windows (PowerShell) & Linux / macOS (Bash):**
 ```bash
-istioctl dashboard kiali
+# Xem 30 dòng log thống kê mới nhất của loadgenerator
+kubectl logs -n online-boutique deployment/loadgenerator -c main --tail=30
 ```
 
-Hoặc sử dụng `kubectl port-forward`:
+#### Kết quả kỳ vọng & Thực tế
+Log hiển thị bảng thống kê các endpoint với tỷ lệ thất bại `# fails` đạt `0(0.00%)`:
+```text
+Type     Name                                           # reqs      # fails |    Avg     Min     Max    Med |   req/s  failures/s
+--------|---------------------------------------------|-------|-------------|-------|-------|-------|-------|--------|-----------
+GET      /                                               2326      0(0.00%) |     43      19    1104     41 |    0.10        0.00
+GET      /cart                                           6891      0(0.00%) |     35      22     229     34 |    0.10        0.00
+POST     /cart                                           6938      0(0.00%) |     46      32     237     44 |    0.40        0.00
+POST     /cart/checkout                                  2296      0(0.00%) |     52      19    1047     50 |    0.20        0.00
+GET      /product/0PUK6V6EV0                             3267      0(0.00%) |     30      24     157     30 |    0.40        0.00
+POST     /setCurrency                                    4465      0(0.00%) |     45      36    1115     44 |    0.10        0.00
+--------|---------------------------------------------|-------|-------------|-------|-------|-------|-------|--------|-----------
+         Aggregated                                     52746      0(0.00%) |     36      19    1230     32 |    2.40        0.00
+```
+
+---
+
+### 6.5. Kiểm Tra Kết Nối TCP Passthrough Từ `cartservice` Ra AWS ElastiCache Redis
+
+#### Mục đích & Ý nghĩa
+Trong kiến trúc triển khai thực tế trên AWS, `cartservice` kết nối trực tiếp với cụm **AWS ElastiCache Redis 7.1** (`port 6379`) nằm ngoài cụm Kubernetes. Vì ElastiCache là dịch vụ AWS quản lý không có sidecar Envoy, nó không thể thực hiện bắt tay mTLS. Việc kiểm tra này xác nhận Istio đang ở chế độ `outboundTrafficPolicy.mode = ALLOW_ANY` và `DestinationRule` chỉ áp dụng trong phạm vi cụm (`*.online-boutique.svc.cluster.local`), cho phép lưu lượng TCP cổng 6379 đi xuyên qua sidecar (TCP Passthrough) thông suốt mà không bị lỗi SSL/mTLS.
+
+#### Lệnh thực thi
+
+**Trên Windows (PowerShell) & Linux / macOS (Bash):**
 ```bash
+# 1. Kiểm tra log ứng dụng cartservice (xác nhận giao dịch giỏ hàng thành công)
+kubectl logs -n online-boutique deployment/cartservice -c server --tail=30
+
+# 2. Kiểm tra log của proxy Envoy trên cartservice (xác nhận không có lỗi kết nối outbound)
+kubectl logs -n online-boutique deployment/cartservice -c istio-proxy --tail=50
+```
+
+#### Kết quả kỳ vọng & Thực tế
+- Container ứng dụng `cartservice` ghi nhận liên tục các hàm `AddItemAsync`, `GetCartAsync`, `EmptyCartAsync`, hoàn toàn không có lỗi `RedisConnectionException` hay timeout:
+```text
+AddItemAsync called with userId=8bf37408-03e5-4510-bfe0-d81c813f95f9, productId=LS4PSXUNUM, quantity=4
+GetCartAsync called with userId=8bf37408-03e5-4510-bfe0-d81c813f95f9
+EmptyCartAsync called with userId=fb82f1c6-750f-4d55-86b3-0e129776126e
+Checking CartService Health
+```
+- Container `istio-proxy` ghi nhận `Envoy proxy is ready` và duy trì kết nối xDS ổn định với `istiod`.
+
+---
+
+### 6.6. Kiểm Tra Kiali Dashboard & Giải Thích Tab `Traffic Graph`
+
+#### Mục đích & Ý nghĩa
+Kiali cung cấp giao diện đồ họa quản trị toàn diện cho Istio Service Mesh, giúp kiểm tra tính toàn vẹn của mesh, cấu hình xác thực (Validation) và cấu trúc liên kết các dịch vụ.
+
+#### Mở Kiali Dashboard
+
+**Trên cả Windows & Linux:**
+```bash
+# Sử dụng kubectl port-forward mở cổng 20001 về máy cục bộ
 kubectl port-forward svc/kiali 20001:20001 -n istio-system
 ```
-Sau đó truy cập trình duyệt tại địa chỉ: [http://localhost:20001/kiali](http://localhost:20001/kiali). Tại giao diện Kiali:
-- Chọn namespace `online-boutique`.
-- Vào mục **Graph** -> Display: chọn **Security** (hiển thị biểu tượng ổ khóa cho mTLS traffic), **Traffic Animation**, **Request Rate**.
+*(Truy cập trình duyệt tại địa chỉ: [http://localhost:20001/kiali](http://localhost:20001/kiali))*. Hoặc dùng lệnh tự động: `istioctl dashboard kiali`.
+
+#### Trạng Thái Các Tab Trên Kiali UI
+
+| Tab chức năng | Kết quả kiểm tra thực tế | Ý nghĩa xác minh |
+| :--- | :--- | :--- |
+| **Workloads** | 11/11 workloads trong `online-boutique` hiển thị trạng thái **Healthy** (xanh lá). Không có cảnh báo `Missing Sidecar`. | Kiali đọc thành công Kubernetes API; toàn bộ Pods đều đã có `istio-proxy` hoạt động. |
+| **Services** | Toàn bộ 11 Services hiển thị trạng thái **Healthy**, nhận diện đầy đủ `VirtualService` và `DestinationRule`. | Định tuyến dịch vụ nội bộ liên kết chuẩn xác. |
+| **Istio Config** | Các tài nguyên `Gateway`, `VirtualService`, `PeerAuthentication`, `AuthorizationPolicy` đều có trạng thái **Valid** (xanh lá). Không có lỗi cú pháp hoặc xung đột. | Cấu hình YAML của Istio đạt chuẩn ngữ nghĩa của Istio Control Plane. |
+| **Traffic Graph** | Hiển thị thông báo: **"Metrics are disabled. Graph requires a metrics store (Prometheus) to be enabled."** | **Hành vi hoàn toàn bình thường và đúng thiết kế của Stage 4** *(xem giải thích chi tiết bên dưới)*. |
+
+#### ⚠️ Giải Thích Kỹ Thuật: Tại Sao Tab `Traffic Graph` Thông Báo "Metrics are disabled"?
+
+1. **Cơ chế thu thập của Kiali:**
+   - Kiali **không tự lưu trữ dữ liệu đo lường lưu lượng (Metrics)**.
+   - Để hiển thị các tab **Workloads**, **Services**, và **Istio Config**, Kiali chỉ cần truy vấn trực tiếp vào **Kubernetes API Server** và **Istiod**. Do đó các tab này hoạt động đầy đủ ngay ở Stage 4.
+2. **Sự phụ thuộc vào Prometheus cho đồ thị lưu lượng (Traffic Graph):**
+   - Để vẽ được sơ đồ mạng động (`Traffic Graph`), tính toán tốc độ request/giây (RPS), độ trễ (latency), tỷ lệ lỗi và hiển thị đường truyền mTLS thời gian thực, Kiali **bắt buộc phải truy vấn các chỉ số time-series từ Prometheus** (các metric như `istio_requests_total`, `istio_tcp_connections_opened_total` do Envoy sidecar xuất ra).
+3. **Phân tách trách nhiệm theo kế hoạch (Roadmap Alignment):**
+   - Theo lộ trình dự án tại [plan.md](file:///d:/online-boutique/online-boutique-app/devops/plan.md), toàn bộ hệ thống giám sát tập trung gồm **Prometheus, Grafana, Alertmanager, Loki, và Tempo** sẽ được thiết kế, cài đặt và cấu hình bài bản trong **Stage 5: Monitoring & Observability**.
+   - Tại Stage 4, Kiali được cài đặt sẵn sàng với cấu hình trỏ tới Prometheus nội bộ (`http://prometheus-server.monitoring:80`). Ngay sau khi Stage 5 hoàn thành việc triển khai Prometheus Stack trong namespace `monitoring`, tab **Traffic Graph** trên Kiali sẽ tự động kích hoạt và hiển thị đầy đủ sơ đồ topology kèm biểu tượng ổ khóa mTLS mà không cần cài đặt lại Kiali.
 
 ---
 
-### 6.4 Kiểm Tra Lưu Lượng Tải & Kết Nối Redis
+### 6.7. Bảng Tổng Hợp Checklist Nghiệm Thu Stage 4 (Sign-off Checklist)
 
-1. **Kiểm tra `loadgenerator` (0% lỗi):**
-   ```bash
-   kubectl logs -n online-boutique -l app=loadgenerator -c main --tail=20
-   ```
-   Kỳ vọng: Toàn bộ các request `GET /`, `POST /cart`, `POST /cart/checkout` đều có tỷ lệ fail là `0(0.00%)`.
-
-2. **Kiểm tra `cartservice` kết nối AWS ElastiCache:**
-   ```bash
-   kubectl logs -n online-boutique -l app=cartservice -c server --tail=20
-   ```
-   Kỳ vọng: Các hàm `AddItemAsync`, `GetCartAsync` phản hồi bình thường, không có lỗi timeout kết nối Redis.
+| STT | Tiêu chí kiểm thử | Kỳ vọng | Kết quả thực tế | Trạng thái |
+| :-: | :--- | :--- | :--- | :-: |
+| 1 | **Trạng thái Pods & Sidecar** | 100% (11/11) Pods đạt `2/2 Running` | 11/11 Pods `2/2 Running` | **PASS** |
+| 2 | **Istio Ingress Gateway** | Truy cập trả về `HTTP 200 OK` + header `server: istio-envoy` | `HTTP/1.1 200 OK`, `server: istio-envoy` | **PASS** |
+| 3 | **mTLS STRICT & RBAC** | `istioctl describe pod` xác nhận mode `STRICT` & policy RBAC | Workload mTLS mode: `STRICT`, Applied policies đầy đủ | **PASS** |
+| 4 | **Lưu lượng tải nội bộ** | `loadgenerator` gửi tải liên tục với tỷ lệ lỗi `0%` | 52,746+ requests thành công, tỷ lệ lỗi `0.00%` | **PASS** |
+| 5 | **Kết nối ElastiCache Redis** | `cartservice` đọc/ghi giỏ hàng ra Redis port 6379 thông suốt | `AddItemAsync`, `GetCartAsync` hoạt động bình thường | **PASS** |
+| 6 | **Kiali Dashboard** | Workloads, Services, Istio Config báo xanh; ghi nhận chờ Prometheus ở Stage 5 | Workloads Healthy, Istio Config Valid, sẵn sàng cho Stage 5 | **PASS** |
 
