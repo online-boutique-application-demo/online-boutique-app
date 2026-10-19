@@ -128,27 +128,21 @@ online-boutique-config/
 
 Dưới đây là các bước cài đặt chi tiết Istio và Kiali trên cụm EKS (áp dụng khi triển khai mới hoặc sau mỗi lần khởi tạo lại hạ tầng):
 
-### Bước 1: Cài Đặt Istio Với Internet-Facing Load Balancer
-Cài đặt Istio profile `default` và cấu hình annotation trực tiếp cho Ingress Gateway để AWS Load Balancer Controller tự động tạo Internet-facing NLB:
+### Bước 1: Cài Đặt Istio & Cấu Hình Internet-Facing Ingress Gateway
 
-**Trên Windows (PowerShell):**
-> 💡 *Lưu ý trong PowerShell:* Dùng dấu backtick (`` ` ``) để ngắt dòng và bọc giá trị `--set` trong cặp nháy đơn (`'...'`) để tránh lỗi phân tích cú pháp của PowerShell:
-```powershell
-istioctl install --set profile=default `
-  --set 'values.gateways.istio-ingressgateway.serviceAnnotations.service\.beta\.kubernetes\.io/aws-load-balancer-scheme=internet-facing' `
-  -y
-```
-*(Hoặc chạy trên một dòng duy nhất)*:
-```powershell
-istioctl install --set profile=default --set 'values.gateways.istio-ingressgateway.serviceAnnotations.service\.beta\.kubernetes\.io/aws-load-balancer-scheme=internet-facing' -y
-```
+Cài đặt Istio với profile `default` (bao gồm `istiod` và `istio-ingressgateway`):
 
-**Trên Linux / macOS (Bash):**
+**Trên cả Windows & Linux:**
 ```bash
-istioctl install --set profile=default \
-  --set 'values.gateways.istio-ingressgateway.serviceAnnotations.service\.beta\.kubernetes\.io/aws-load-balancer-scheme=internet-facing' \
-  -y
+istioctl install --set profile=default -y
 ```
+
+Sau khi cài đặt xong, gắn annotation để AWS Load Balancer Controller tự động tạo **Public Internet-Facing NLB** cho Ingress Gateway:
+
+```bash
+kubectl annotate svc istio-ingressgateway -n istio-system service.beta.kubernetes.io/aws-load-balancer-scheme="internet-facing" --overwrite
+```
+
 
 ---
 
