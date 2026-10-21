@@ -539,15 +539,15 @@ monitoring/
 | `SpotInstanceInterruption` | Spot instance sắp bị thu hồi | Warning |
 
 ### 5.5 Deliverables
-- [ ] kube-prometheus-stack Helm values (Prometheus + Grafana + Alertmanager)
-- [ ] Loki + Promtail/Alloy cài đặt và cấu hình
-- [ ] Tempo cho distributed tracing
-- [ ] OpenTelemetry Collector config
-- [ ] Grafana dashboards custom cho Online Boutique
-- [ ] Istio mesh dashboard
-- [ ] Alert rules + notification channels (bao gồm Spot interruption)
-- [ ] ServiceMonitor/PodMonitor CRDs cho từng service
-- [ ] 📝 Documentation: `devops/stage-5-monitoring.md`
+- [x] kube-prometheus-stack Helm values (Prometheus + Grafana + Alertmanager)
+- [x] Loki + Promtail/Alloy cài đặt và cấu hình
+- [x] Tempo cho distributed tracing
+- [x] OpenTelemetry Collector config
+- [x] Grafana dashboards custom cho Online Boutique
+- [x] Istio mesh dashboard
+- [x] Alert rules + notification channels (bao gồm Spot interruption)
+- [x] ServiceMonitor/PodMonitor CRDs cho từng service
+- [x] 📝 Documentation: `devops/stage-5-monitoring.md`
 
 ---
 
