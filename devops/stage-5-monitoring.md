@@ -186,9 +186,224 @@ Tất cả thành phần được khai báo dưới dạng Application trong `ar
 
 ---
 
-## 5. Hướng Dẫn Truy Cập & Nghiệm Thu Kiểm Thử
+## 5. Quy Trình Cài Đặt Lại Sau Khi Recreate Hạ Tầng (Installation / Recreate Guide)
 
-### 5.1 Hướng Dẫn Mở Port Truy Cập Giao Diện (Port-Forwarding)
+Mục này cung cấp quy trình từng bước để tái thiết lập toàn bộ stack Monitoring & Observability khi bạn thực hiện chu trình **`terraform destroy` vào cuối ngày** và **`terraform apply` tái tạo hạ tầng vào ngày hôm sau**.
+
+> 💡 **Tiền điều kiện:** Cụm EKS đã được tạo thành công bởi Terraform, `kubectl` đã kết nối đến cluster (`aws eks update-kubeconfig --region ap-southeast-1 --name online-boutique-dev`), và đã cài đặt Istio (từ Stage 4).
+
+---
+
+### Phương Án 1: Tự Động Hoàn Toàn Bằng ArgoCD GitOps (Khuyên Dùng)
+
+Sau khi ArgoCD Controller đã được cài đặt trên cluster (Stage 3), toàn bộ stack giám sát sẽ được đồng bộ tự động chỉ bằng cách áp dụng các tệp Application đã chuẩn bị sẵn trong thư mục `argocd/apps/dev/`:
+
+#### Trên Windows (PowerShell):
+```powershell
+# Chuyển vào thư mục repo config
+Set-Location -Path "d:\online-boutique\online-boutique-config"
+
+# Áp dụng tất cả các Application giám sát qua ArgoCD
+kubectl apply -f argocd/apps/dev/monitoring-stack.yaml
+kubectl apply -f argocd/apps/dev/kube-prometheus-stack.yaml
+kubectl apply -f argocd/apps/dev/loki.yaml
+kubectl apply -f argocd/apps/dev/tempo.yaml
+kubectl apply -f argocd/apps/dev/otel-collector.yaml
+
+# Hoặc áp dụng toàn bộ thư mục dev:
+kubectl apply -f argocd/apps/dev/
+```
+
+#### Trên Linux / macOS (Bash):
+```bash
+cd /path/to/online-boutique-config
+
+# Áp dụng toàn bộ Applications giám sát qua ArgoCD
+kubectl apply -f argocd/apps/dev/monitoring-stack.yaml
+kubectl apply -f argocd/apps/dev/kube-prometheus-stack.yaml
+kubectl apply -f argocd/apps/dev/loki.yaml
+kubectl apply -f argocd/apps/dev/tempo.yaml
+kubectl apply -f argocd/apps/dev/otel-collector.yaml
+```
+
+ArgoCD sẽ tự động:
+1. Tạo namespace `monitoring`.
+2. Kéo Helm Charts chính thức từ Helm repositories trên Internet và nạp các giá trị tối ưu đã cấu hình.
+3. Đồng bộ Kustomize (`base/monitoring`) để tạo các Service Aliases, Custom AlertRules và nạp Dashboards Grafana.
+
+---
+
+### Phương Án 2: Cài Đặt Trực Tiếp Bằng Helm CLI & Kubectl (Khi Cần Dựng Nhanh)
+
+Nếu chưa dựng ArgoCD hoặc muốn cài đặt từng thành phần để kiểm tra cục bộ, sử dụng quy trình sau:
+
+#### Bước 1: Đăng ký & Cập nhật các Helm Repositories
+
+**Windows PowerShell & Linux / macOS:**
+```bash
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo add grafana https://grafana.github.io/helm-charts
+helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+helm repo update
+```
+
+---
+
+#### Bước 2: Tạo Namespace & Áp Dụng Tài Nguyên Kustomize
+Tạo namespace `monitoring`, các Service Aliases (`prometheus-server`, `alertmanager`, `grafana`, `otel-collector`), Custom Alert Rules và Grafana Dashboards ConfigMaps:
+
+**Windows PowerShell & Linux / macOS:**
+```bash
+kubectl apply -k base/monitoring
+```
+
+---
+
+#### Bước 3: Cấu Hình Istio Mesh Tracing
+Đảm bảo Istio gửi thông tin trace về OpenTelemetry Collector và sampling 100%:
+
+**Windows PowerShell & Linux / macOS:**
+```bash
+kubectl apply -f base/istio/istio-mesh-configmap.yaml
+kubectl apply -f base/istio/telemetry.yaml
+```
+
+---
+
+#### Bước 4: Cài Đặt Prometheus + Grafana + Alertmanager (`kube-prometheus-stack`)
+
+- **Trên Windows PowerShell:**
+  ```powershell
+  helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack `
+    --namespace monitoring `
+    -f base/monitoring/prometheus-stack-values.yaml
+  ```
+  *(Hoặc chạy trên 1 dòng duy nhất)*:
+  ```powershell
+  helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack --namespace monitoring -f base/monitoring/prometheus-stack-values.yaml
+  ```
+
+- **Trên Linux / macOS (Bash):**
+  ```bash
+  helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+    --namespace monitoring \
+    -f base/monitoring/prometheus-stack-values.yaml
+  ```
+
+---
+
+#### Bước 5: Cài Đặt Loki & Promtail (`loki-stack`)
+
+- **Trên Windows PowerShell:**
+  ```powershell
+  helm upgrade --install loki-stack grafana/loki-stack `
+    --namespace monitoring `
+    -f base/monitoring/loki-values.yaml
+  ```
+  *(Hoặc chạy trên 1 dòng duy nhất)*:
+  ```powershell
+  helm upgrade --install loki-stack grafana/loki-stack --namespace monitoring -f base/monitoring/loki-values.yaml
+  ```
+
+- **Trên Linux / macOS (Bash):**
+  ```bash
+  helm upgrade --install loki-stack grafana/loki-stack \
+    --namespace monitoring \
+    -f base/monitoring/loki-values.yaml
+  ```
+
+---
+
+#### Bước 6: Cài Đặt Tempo Distributed Tracing
+
+- **Trên Windows PowerShell:**
+  ```powershell
+  helm upgrade --install tempo grafana/tempo `
+    --namespace monitoring `
+    -f base/monitoring/tempo-values.yaml
+  ```
+  *(Hoặc chạy trên 1 dòng duy nhất)*:
+  ```powershell
+  helm upgrade --install tempo grafana/tempo --namespace monitoring -f base/monitoring/tempo-values.yaml
+  ```
+
+- **Trên Linux / macOS (Bash):**
+  ```bash
+  helm upgrade --install tempo grafana/tempo \
+    --namespace monitoring \
+    -f base/monitoring/tempo-values.yaml
+  ```
+
+---
+
+#### Bước 7: Cài Đặt OpenTelemetry Collector Contrib
+
+- **Trên Windows PowerShell:**
+  ```powershell
+  helm upgrade --install otel-collector open-telemetry/opentelemetry-collector `
+    --namespace monitoring `
+    -f base/monitoring/otel-collector-values.yaml
+  ```
+  *(Hoặc chạy trên 1 dòng duy nhất)*:
+  ```powershell
+  helm upgrade --install otel-collector open-telemetry/opentelemetry-collector --namespace monitoring -f base/monitoring/otel-collector-values.yaml
+  ```
+
+- **Trên Linux / macOS (Bash):**
+  ```bash
+  helm upgrade --install otel-collector open-telemetry/opentelemetry-collector \
+    --namespace monitoring \
+    -f base/monitoring/otel-collector-values.yaml
+  ```
+
+---
+
+#### Bước 8: Khởi Động Lại Workloads Để Nhận Cấu Hình Tracing Mới
+
+**Windows PowerShell & Linux / macOS:**
+```bash
+kubectl rollout restart deployment -n online-boutique
+kubectl rollout restart deployment istio-ingressgateway -n istio-system
+```
+
+---
+
+### Quy Trình Dọn Dẹp Trước Khi `terraform destroy` (Clean-up Guide)
+
+Trước khi chạy `terraform destroy` vào cuối ngày, bạn nên gỡ bỏ các ứng dụng sử dụng Persistent Volume Claim (EBS gp2) và LoadBalancer để AWS giải phóng tài nguyên sạch sẽ, tránh hiện tượng Terraform bị treo (hang) do kẹt volume attachment hoặc finalizers:
+
+#### Trên Windows PowerShell:
+```powershell
+# 1. Gỡ các Helm releases
+helm uninstall kube-prometheus-stack -n monitoring
+helm uninstall loki-stack -n monitoring
+helm uninstall tempo -n monitoring
+helm uninstall otel-collector -n monitoring
+
+# 2. Xóa PVCs để giải phóng các volume AWS EBS GP2
+kubectl delete pvc --all -n monitoring
+
+# 3. Xóa namespace monitoring
+kubectl delete namespace monitoring --timeout=60s
+```
+
+#### Trên Linux / macOS (Bash):
+```bash
+# 1. Gỡ các Helm releases
+helm uninstall kube-prometheus-stack loki-stack tempo otel-collector -n monitoring
+
+# 2. Xóa toàn bộ PVCs lưu trữ
+kubectl delete pvc --all -n monitoring
+
+# 3. Xóa namespace
+kubectl delete namespace monitoring --timeout=60s
+```
+
+---
+
+## 6. Hướng Dẫn Truy Cập & Nghiệm Thu Kiểm Thử
+
+### 6.1 Hướng Dẫn Mở Port Truy Cập Giao Diện (Port-Forwarding)
 
 Chạy các lệnh sau trong terminal riêng biệt để truy cập các bảng điều khiển trên máy cục bộ:
 
@@ -304,7 +519,7 @@ kubectl port-forward -n monitoring svc/kube-prometheus-stack-alertmanager 9093:9
 
 ---
 
-## 6. Tổng Kết Deliverables Stage 5
+## 7. Tổng Kết Deliverables Stage 5
 
 - [x] Triển khai `kube-prometheus-stack` (Prometheus Operator v0.94.1, Prometheus v3.15, Alertmanager, Grafana 11.5, Node Exporter, KSM).
 - [x] Triển khai `loki-stack` (Loki v2.9.3 + Promtail DaemonSet trên toàn bộ Spot EC2 nodes).
