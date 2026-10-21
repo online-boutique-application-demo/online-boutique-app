@@ -194,7 +194,9 @@ Chạy các lệnh sau trong terminal riêng biệt để truy cập các bảng
 
 #### 1. Grafana Dashboard (Tài khoản: `admin` / Mật khẩu: `admin`):
 ```bash
-# Linux / macOS / Windows PowerShell:
+# Linux / macOS / Windows PowerShell (Dùng Service alias hoặc tên đầy đủ):
+kubectl port-forward -n monitoring svc/grafana 3000:80
+# Hoặc:
 kubectl port-forward -n monitoring svc/kube-prometheus-stack-grafana 3000:80
 ```
 👉 Truy cập: `http://localhost:3000`
@@ -210,13 +212,17 @@ kubectl port-forward -n istio-system svc/kiali 20001:20001
 ```bash
 # Linux / macOS / Windows PowerShell:
 kubectl port-forward -n monitoring svc/prometheus-server 9090:80
+# Hoặc:
+kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090
 ```
 👉 Truy cập: `http://localhost:9090`
 
 #### 4. Alertmanager Web UI:
 ```bash
-# Linux / macOS / Windows PowerShell:
-kubectl port-forward -n monitoring svc/alertmanager-kube-prometheus-stack-alertmanager 9093:9093
+# Linux / macOS / Windows PowerShell (Dùng Service alias hoặc tên đầy đủ):
+kubectl port-forward -n monitoring svc/alertmanager 9093:9093
+# Hoặc:
+kubectl port-forward -n monitoring svc/kube-prometheus-stack-alertmanager 9093:9093
 ```
 👉 Truy cập: `http://localhost:9093`
 
