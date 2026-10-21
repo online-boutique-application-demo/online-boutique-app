@@ -444,15 +444,15 @@ istio/
 | **Health** | Health check dashboard cho toàn bộ mesh |
 
 ### 4.5 Deliverables
-- [ ] Istio installation manifest (IstioOperator)
-- [ ] Gateway + VirtualService cho frontend
-- [ ] mTLS strict mode cho toàn namespace
-- [ ] Authorization policies (least privilege service-to-service)
-- [ ] DestinationRules với circuit breaking
-- [ ] Traffic management configs (canary routing weights)
-- [ ] **Kiali dashboard** cài đặt và cấu hình
-- [ ] Kiali tích hợp với Prometheus, Grafana, Tempo
-- [ ] 📝 Documentation: `devops/stage-4-service-mesh.md`
+- [x] Istio installation (`istioctl install` default profile + Ingress Gateway)
+- [x] Gateway + VirtualService cho frontend
+- [x] mTLS strict mode cho toàn namespace (`online-boutique`)
+- [x] Authorization policies (least privilege service-to-service whitelist + deny-all)
+- [x] DestinationRules với circuit breaking & connection pool
+- [x] Thay thế Service `frontend-external` LoadBalancer cũ bằng Istio Ingress
+- [x] **Kiali dashboard** cài đặt và cấu hình (`kiali-server` Helm chart)
+- [x] Kiali sẵn sàng tích hợp với Prometheus & Grafana (chuẩn bị cho Stage 5)
+- [x] 📝 Documentation: `devops/stage-4-service-mesh.md`
 
 ---
 
