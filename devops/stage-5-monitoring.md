@@ -100,7 +100,7 @@ graph TB
 | **Grafana** | `kube-prometheus-stack` | `grafana/grafana:11.5.2` | `kube-prometheus-stack-grafana:80` | Giao diện hiển thị trực quan hóa Dashboards. Tự động kết nối Prometheus, Loki, Tempo. |
 | **Grafana Loki** | `loki-stack` | `grafana/loki:v2.9.3` | `loki-stack:3100` | Cơ sở dữ liệu lưu trữ log dạng phân tán, đánh chỉ mục theo label (LogQL). Lưu trữ trên EBS GP2 10Gi. |
 | **Promtail** | `loki-stack` | `grafana/promtail:v2.9.3` | DaemonSet trên từng node EC2 | Đọc file container logs trực tiếp từ `/var/log/pods`, gắn kubernetes metadata và đẩy về Loki. |
-| **Grafana Tempo** | `tempo` | `grafana/tempo:2.9.0` | `tempo:4317` (gRPC), `tempo:3200` (HTTP) | Cơ sở dữ liệu lưu trữ distributed trace spans dung lượng cao, chi phí tối ưu. |
+| **Grafana Tempo** | `tempo` | `grafana/tempo:2.9.0` | `tempo:4317` (gRPC), `tempo:3100` (HTTP) | Cơ sở dữ liệu lưu trữ distributed trace spans dung lượng cao, chi phí tối ưu. |
 | **OTel Collector** | `opentelemetry-collector` | `otel/opentelemetry-collector-contrib:0.162.0` | `otel-collector:4317` (OTLP), `otel-collector:9411` (Zipkin) | Tiếp nhận trace spans từ Istio Envoy sidecars (Zipkin format), xử lý bộ đệm theo batch và xuất sang Tempo qua OTLP. |
 
 ---
@@ -443,7 +443,7 @@ kubectl port-forward -n monitoring svc/kube-prometheus-stack-alertmanager 9093:9
 
 ---
 
-### 5.2 Kiểm Thử Tính Năng Chi Tiết & Ý Nghĩa Từng Lệnh
+### 6.2 Kiểm Thử Tính Năng Chi Tiết & Ý Nghĩa Từng Lệnh
 
 #### Bước 1: Kiểm tra trạng thái hoạt động của toàn bộ Pods trong `monitoring`
 - **Ý nghĩa:** Đảm bảo tất cả 100% daemon và services của bộ giám sát đều ở trạng thái `Running`, không có pod nào bị crash hoặc thiếu tài nguyên.
@@ -474,15 +474,19 @@ kubectl port-forward -n monitoring svc/kube-prometheus-stack-alertmanager 9093:9
   ```
 - **Lệnh thực hiện (Windows PowerShell):**
   ```powershell
-  kubectl run test-query --image=curlimages/curl --restart=Never --rm -i -- -s "http://prometheus-server.monitoring:80/api/v1/query?query=count(istio_requests_total)"
+  kubectl run test-query --image=curlimages/curl --restart=Never --rm -i -- -s "http://prometheus-server.monitoring:80/api/v1/query?query=count(istio_requests_total)" 2>$null
   ```
-- **Kết quả kỳ vọng:** API trả về định dạng JSON `status: success` với giá trị vector $> 0$ (thực tế trả về 35-70 metric series).
+- **Kết quả kỳ vọng:** API trả về định dạng JSON `status: success` với giá trị vector $> 0$ (thực tế trả về 35-95 metric series).
 
 #### Bước 3: Kiểm tra hệ thống thu thập Logs (Grafana Loki)
 - **Ý nghĩa:** Đảm bảo Loki đã lập chỉ mục các nhãn và sẵn sàng cho các câu truy vấn LogQL trong Grafana Explore.
-- **Lệnh thực hiện:**
+- **Lệnh thực hiện (Linux / Bash):**
   ```bash
   kubectl run test-loki --image=curlimages/curl --restart=Never --rm -i -- -s "http://loki-stack.monitoring:3100/loki/api/v1/labels"
+  ```
+- **Lệnh thực hiện (Windows PowerShell):**
+  ```powershell
+  kubectl run test-loki --image=curlimages/curl --restart=Never --rm -i -- -s "http://loki-stack.monitoring:3100/loki/api/v1/labels" 2>$null
   ```
 - **Kết quả kỳ vọng:**
   ```json
@@ -491,9 +495,13 @@ kubectl port-forward -n monitoring svc/kube-prometheus-stack-alertmanager 9093:9
 
 #### Bước 4: Kiểm tra trạng thái sẵn sàng của Distributed Tracing (Grafana Tempo)
 - **Ý nghĩa:** Đảm bảo Tempo instance đang chạy sẵn sàng ghi nhận spans từ OTel Collector.
-- **Lệnh thực hiện:**
+- **Lệnh thực hiện (Linux / Bash):**
   ```bash
-  kubectl run test-tempo --image=curlimages/curl --restart=Never --rm -i -- -s "http://tempo.monitoring:3200/ready"
+  kubectl run test-tempo --image=curlimages/curl --restart=Never --rm -i -- -s "http://tempo.monitoring:3100/ready"
+  ```
+- **Lệnh thực hiện (Windows PowerShell):**
+  ```powershell
+  kubectl run test-tempo --image=curlimages/curl --restart=Never --rm -i -- -s "http://tempo.monitoring:3100/ready" 2>$null
   ```
 - **Kết quả kỳ vọng:** Trả về `ready`.
 
