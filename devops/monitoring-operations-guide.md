@@ -51,6 +51,7 @@
 
 Sau khi recreate hạ tầng mỗi sáng, chạy các lệnh sau để verify:
 
+#### Trên Linux / macOS (Bash):
 ```bash
 # 1. Kiểm tra tất cả pods monitoring đang Running
 kubectl get pods -n monitoring
@@ -72,12 +73,40 @@ kubectl run test-rules --image=curlimages/curl --restart=Never --rm -i -- \
   -s "http://prometheus-server.monitoring:80/api/v1/rules" | grep "online-boutique"
 ```
 
+#### Trên Windows (PowerShell):
+```powershell
+# 1. Kiểm tra tất cả pods monitoring đang Running
+kubectl get pods -n monitoring
+
+# 2. Kiểm tra Prometheus đã scrape được Istio metrics
+kubectl run test-prom --image=curlimages/curl --restart=Never --rm -i -- -s "http://prometheus-server.monitoring:80/api/v1/query?query=count(istio_requests_total)" 2>$null
+
+# 3. Kiểm tra Loki đã nhận logs
+kubectl run test-loki --image=curlimages/curl --restart=Never --rm -i -- -s "http://loki-stack.monitoring:3100/loki/api/v1/labels" 2>$null
+
+# 4. Kiểm tra Tempo sẵn sàng
+kubectl run test-tempo --image=curlimages/curl --restart=Never --rm -i -- -s "http://tempo.monitoring:3100/ready" 2>$null
+
+# 5. Kiểm tra alert rules đã load
+kubectl run test-rules --image=curlimages/curl --restart=Never --rm -i -- -s "http://prometheus-server.monitoring:80/api/v1/rules" 2>$null | Select-String "online-boutique"
+```
+
 ### 2.2 Kiểm Tra Cuối Ngày Trước Khi Destroy
 
+#### Trên Linux / macOS (Bash):
 ```bash
 # Kiểm tra có alert đang firing không
 kubectl run test-alerts --image=curlimages/curl --restart=Never --rm -i -- \
   -s "http://prometheus-server.monitoring:80/api/v1/alerts" | grep "firing"
+
+# Nếu cần export data trước khi destroy:
+# (Prometheus data sẽ mất - OK cho dev)
+```
+
+#### Trên Windows (PowerShell):
+```powershell
+# Kiểm tra có alert đang firing không
+kubectl run test-alerts --image=curlimages/curl --restart=Never --rm -i -- -s "http://prometheus-server.monitoring:80/api/v1/alerts" 2>$null | Select-String "firing"
 
 # Nếu cần export data trước khi destroy:
 # (Prometheus data sẽ mất - OK cho dev)
