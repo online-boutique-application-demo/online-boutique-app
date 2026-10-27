@@ -297,19 +297,31 @@ sum by (pod) (
 ) * 100
 ```
 
-#### Tình huống 3: Kiểm tra Istio mesh
+#### Tình huống 3: Kiểm tra Istio mesh (mTLS & Sidecar Performance)
 
 ```promql
-# mTLS connections
+# 1. Thống kê số lượng request mTLS theo từng service đích (Layer 7 gRPC/HTTP)
 sum by (destination_workload) (
-  istio_tcp_connections_opened_total{destination_workload_namespace="online-boutique"}
+  istio_requests_total{reporter="destination", destination_workload_namespace="online-boutique", connection_security_policy="mutual_tls"}
 )
 
-# Envoy sidecar memory (MB)
+# 2. Xem phân bổ tỷ lệ mTLS (mutual_tls) vs Plaintext theo Workload
+sum by (destination_workload, connection_security_policy) (
+  istio_requests_total{reporter="destination", destination_workload_namespace="online-boutique"}
+)
+
+# 3. Tính tỷ lệ % lưu lượng được bảo vệ bởi mTLS trong toàn bộ Service Mesh (kỳ vọng: 100%)
+sum(rate(istio_requests_total{reporter="destination", destination_workload_namespace="online-boutique", connection_security_policy="mutual_tls"}[5m]))
+/
+sum(rate(istio_requests_total{reporter="destination", destination_workload_namespace="online-boutique"}[5m])) * 100
+
+# 4. Envoy sidecar memory (MB)
 sum by (pod) (
   container_memory_working_set_bytes{namespace="online-boutique",container="istio-proxy"}
 ) / 1024 / 1024
 ```
+
+> 💡 **Lưu ý kỹ thuật:** Microservices trong Online Boutique giao tiếp qua gRPC/HTTP (L7) nên số liệu mTLS được ghi nhận trong metric `istio_requests_total` qua nhãn `connection_security_policy="mutual_tls"`. Metric `istio_tcp_connections_opened_total` chỉ dùng cho kết nối Layer 4 TCP thuần (ví dụ: `cartservice` gọi Redis bên ngoài).
 
 ---
 
@@ -329,12 +341,19 @@ sum by (pod) (
 
 ### 5.2 Xem Alerts Đang Firing
 
-```bash
-# Qua CLI
-kubectl run test-alerts --image=curlimages/curl --restart=Never --rm -i -- \
-  -s "http://prometheus-server.monitoring:80/api/v1/alerts" | python -m json.tool
+#### Qua CLI:
+- **Trên Linux / macOS (Bash):**
+  ```bash
+  kubectl run test-alerts --image=curlimages/curl --restart=Never --rm -i -- \
+    -s "http://prometheus-server.monitoring:80/api/v1/alerts" | python -m json.tool
+  ```
+- **Trên Windows (PowerShell):**
+  ```powershell
+  kubectl run test-alerts --image=curlimages/curl --restart=Never --rm -i -- -s "http://prometheus-server.monitoring:80/api/v1/alerts" 2>$null
+  ```
 
-# Qua Alertmanager UI
+#### Qua Alertmanager UI:
+```bash
 kubectl port-forward -n monitoring svc/alertmanager 9093:9093
 # Mở http://localhost:9093
 ```
