@@ -525,6 +525,21 @@ kubectl port-forward -n monitoring svc/kube-prometheus-stack-alertmanager 9093:9
   ```
 - **Kết quả kỳ vọng:** Xuất hiện log `INF Prometheus connected -- metrics features restored` và `Health refresh completed ... errors=0`. Truy cập `http://localhost:20001/kiali` $\rightarrow$ Graph $\rightarrow$ Namespace: `online-boutique` hiển thị biểu đồ đồ thị mạng trực quan, tốc độ RPS và tỷ lệ phần trăm mã hóa mTLS.
 
+#### Bước 7: Kiểm tra truy vấn Traces trên Grafana Tempo
+- **Ý nghĩa:** Đảm bảo Envoy sidecars gửi OTLP gRPC spans thành công qua OTel Collector và Tempo đã lập chỉ mục traces để sẵn sàng tìm kiếm trên Grafana Explore (Tempo datasource).
+- **Lệnh thực hiện (Linux / Bash):**
+  ```bash
+  kubectl run test-tempo-traces --image=curlimages/curl --restart=Never --rm -i -- -s "http://tempo.monitoring:3100/api/search?limit=5"
+  ```
+- **Lệnh thực hiện (Windows PowerShell):**
+  ```powershell
+  kubectl run test-tempo-traces --image=curlimages/curl --restart=Never --rm -i -- -s "http://tempo.monitoring:3100/api/search?limit=5" 2>$null
+  ```
+- **Kết quả kỳ vọng:** API trả về danh sách các `traceID` của các microservices (ví dụ `checkoutservice`, `currencyservice`, `frontend`) cùng số lượng `inspectedTraces > 0`:
+  ```json
+  {"traces":[{"traceID":"...","rootServiceName":"checkoutservice.online-boutique",...}],"metrics":{"inspectedTraces":14,...}}
+  ```
+
 ---
 
 ## 7. Tổng Kết Deliverables Stage 5
@@ -533,7 +548,7 @@ kubectl port-forward -n monitoring svc/kube-prometheus-stack-alertmanager 9093:9
 - [x] Triển khai `loki-stack` (Loki v2.9.3 + Promtail DaemonSet trên toàn bộ Spot EC2 nodes).
 - [x] Triển khai `tempo` cho Distributed Tracing.
 - [x] Triển khai `opentelemetry-collector` tiếp nhận spans từ Istio Envoy sidecars.
-- [x] Cấu hình Istio Mesh Tracing đẩy Zipkin spans về OTel Collector với 100% trace sampling.
+- [x] Cấu hình Istio Mesh Tracing đẩy OTLP gRPC spans về OTel Collector (port 4317) với 100% trace sampling và chuyển tiếp vào Grafana Tempo.
 - [x] Tạo Service Aliases (`prometheus-server:80`, `otel-collector`) tương thích với Kiali và Istio.
 - [x] Xây dựng và tự động nạp 3 Custom Grafana Dashboards (Microservices Golden Signals, Istio Service Mesh, Pod Compute Resources).
 - [x] Cấu hình bộ cảnh báo tiêu chuẩn `PrometheusRule` cho Online Boutique.
