@@ -231,16 +231,17 @@ Có 2 phương án để triển khai lại stack giám sát:
 
 #### Phương Án A: Tự Động Hoàn Toàn Bằng ArgoCD GitOps (Khuyên Dùng)
 
+Vì ArgoCD đã được cài ở bước 4.2 và các ArgoCD Application manifests đã khai báo sẵn trong thư mục `argocd/apps/dev/`, ta chỉ cần áp dụng toàn bộ thư mục:
+
 ```powershell
 cd d:\online-boutique\online-boutique-config
 
-# Áp dụng tất cả các Application giám sát
-kubectl apply -f argocd/apps/dev/monitoring-stack.yaml
-kubectl apply -f argocd/apps/dev/kube-prometheus-stack.yaml
-kubectl apply -f argocd/apps/dev/loki.yaml
-kubectl apply -f argocd/apps/dev/tempo.yaml
-kubectl apply -f argocd/apps/dev/otel-collector.yaml
+# Áp dụng toàn bộ ArgoCD Applications (các app đã tồn tại từ Stage 3, 4 sẽ báo unchanged)
+kubectl apply -f argocd/apps/dev/
 ```
+
+> [!TIP]
+> Lệnh trên sẽ apply tất cả 9 file YAML trong thư mục, bao gồm cả các app đã tạo ở bước 4.2 và 4.3. ArgoCD sẽ bỏ qua những app đã tồn tại (`unchanged`) và chỉ tạo mới 5 app monitoring: `monitoring-stack`, `kube-prometheus-stack`, `loki`, `tempo`, `otel-collector`.
 
 #### Phương Án B: Cài Đặt Trực Tiếp Bằng Helm CLI (Khi Cần Dựng Nhanh)
 
@@ -265,19 +266,13 @@ helm upgrade --install otel-collector open-telemetry/opentelemetry-collector --n
 
 ---
 
-### 4.5 Kích Hoạt Distributed Tracing Pipeline (Hoàn Tất Tích Hợp Mesh - Monitoring)
+### 4.5 Kích Hoạt Distributed Tracing (Khởi Động Lại Workloads)
 
-Để Envoy sidecars đẩy trace spans qua OTLP gRPC tới OTel Collector và Tempo mà không bị lỗi mTLS:
+> [!NOTE]
+> Cấu hình tracing (`istio-mesh-configmap.yaml`, `telemetry.yaml`, `otel-collector-destination-rule.yaml`) đã nằm trong `base/istio/kustomization.yaml` và được ArgoCD app `istio-config` tự động đồng bộ ở bước 4.3. Tuy nhiên, các Envoy sidecar cần được khởi động lại **sau khi monitoring services đã sẵn sàng** để nạp cấu hình tracing mới và kết nối thành công tới OTel Collector.
 
 ```powershell
-cd d:\online-boutique\online-boutique-config
-
-# 1. Áp dụng cấu hình Mesh Tracing và DestinationRule tắt mTLS cho monitoring services
-kubectl apply -f base/istio/istio-mesh-configmap.yaml
-kubectl apply -f base/istio/telemetry.yaml
-kubectl apply -f base/istio/otel-collector-destination-rule.yaml
-
-# 2. Khởi động lại các workloads để nạp cấu hình tracing
+# Chờ monitoring pods sẵn sàng (~60-90s) rồi khởi động lại workloads để nạp cấu hình tracing
 kubectl rollout restart deployment/istiod -n istio-system
 kubectl rollout restart deployment -n online-boutique
 kubectl rollout restart deployment/istio-ingressgateway -n istio-system
