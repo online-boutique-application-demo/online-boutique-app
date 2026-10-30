@@ -189,10 +189,20 @@ helm install argocd argo/argo-cd `
   --namespace argocd --create-namespace `
   -f argocd/install/values.yaml
 
-# 2. Chờ pod ArgoCD sẵn sàng (~30s) rồi áp dụng các controller nền tảng:
+# 2. Chờ ArgoCD pods sẵn sàng
+kubectl wait --for=condition=available deployment -l app.kubernetes.io/part-of=argocd -n argocd --timeout=120s
+
+# 3. Áp dụng các controller nền tảng
 kubectl apply -f argocd/apps/dev/aws-lb-controller.yaml
 kubectl apply -f argocd/apps/dev/cluster-autoscaler.yaml
+
+# 4. ⏳ QUAN TRỌNG: Chờ Cluster Autoscaler sẵn sàng trước khi tiếp tục
+#    (Nếu bỏ qua bước này, cluster chỉ có 3 nodes t3.medium không đủ chạy toàn bộ workloads)
+kubectl wait --for=condition=available deployment/cluster-autoscaler-aws-cluster-autoscaler -n kube-system --timeout=180s
 ```
+
+> [!WARNING]
+> **Không được bỏ qua bước chờ Cluster Autoscaler!** Cluster khởi tạo chỉ có 3 nodes `t3.medium` (~5790m CPU allocatable). Tổng resource requests của toàn bộ workloads (Istio + 11 microservices + 11 Envoy sidecars + Monitoring) là **~5855m CPU** — vượt quá capacity 3 nodes. Cluster Autoscaler phải hoạt động để tự động scale lên 4-5 nodes khi cần.
 
 ---
 
@@ -221,17 +231,22 @@ kubectl apply -f argocd/apps/dev/online-boutique.yaml
 helm repo add kiali https://kiali.org/helm-charts 2>$null
 helm repo update
 helm upgrade --install kiali-server kiali/kiali-server -n istio-system -f base/istio/kiali-values.yaml
+
+# 7. ⏳ Chờ 11 microservices sẵn sàng trước khi deploy monitoring
+#    (Đảm bảo Cluster Autoscaler đã scale đủ nodes cho workloads hiện tại)
+kubectl wait --for=condition=available deployment --all -n online-boutique --timeout=300s
 ```
 
 ---
 
 ### 4.4 Khởi Tạo Monitoring & Observability Stack (Stage 5)
 
+> [!NOTE]
+> Chỉ triển khai monitoring **sau khi** 11 microservices đã Running ở bước 4.3 để đảm bảo Cluster Autoscaler đã scale đủ nodes. Nếu deploy đồng thời, cluster 3 nodes `t3.medium` sẽ bị cạn kiệt CPU (~5855m requests > ~5790m allocatable) khiến pods Pending.
+
 Có 2 phương án để triển khai lại stack giám sát:
 
 #### Phương Án A: Tự Động Hoàn Toàn Bằng ArgoCD GitOps (Khuyên Dùng)
-
-Vì ArgoCD đã được cài ở bước 4.2 và các ArgoCD Application manifests đã khai báo sẵn trong thư mục `argocd/apps/dev/`, ta chỉ cần áp dụng toàn bộ thư mục:
 
 ```powershell
 cd d:\online-boutique\online-boutique-config
