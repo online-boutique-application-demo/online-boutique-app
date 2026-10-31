@@ -1,0 +1,122 @@
+# =============================================================================
+# Dependabot Configuration – Automated Dependency Updates
+# Auto-creates PRs when security patches are available for dependencies.
+# =============================================================================
+
+version: 2
+updates:
+  # ── Go modules ──────────────────────────────────────────────
+  - package-ecosystem: "gomod"
+    directories:
+      - "/src/frontend"
+      - "/src/checkoutservice"
+      - "/src/productcatalogservice"
+      - "/src/shippingservice"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "security"
+      - "go"
+    commit-message:
+      prefix: "deps(go):"
+
+  # ── Python pip ──────────────────────────────────────────────
+  - package-ecosystem: "pip"
+    directories:
+      - "/src/recommendationservice"
+      - "/src/loadgenerator"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "security"
+      - "python"
+    commit-message:
+      prefix: "deps(python):"
+
+  # ── npm ─────────────────────────────────────────────────────
+  - package-ecosystem: "npm"
+    directories:
+      - "/src/currencyservice"
+      - "/src/paymentservice"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "security"
+      - "node"
+    commit-message:
+      prefix: "deps(npm):"
+
+  # ── NuGet (.NET) ────────────────────────────────────────────
+  - package-ecosystem: "nuget"
+    directories:
+      - "/src/cartservice/src"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "security"
+      - "dotnet"
+    commit-message:
+      prefix: "deps(nuget):"
+
+  # ── Gradle (Java) ──────────────────────────────────────────
+  - package-ecosystem: "gradle"
+    directories:
+      - "/src/adservice"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "security"
+      - "java"
+    commit-message:
+      prefix: "deps(gradle):"
+
+  # ── Docker base images ─────────────────────────────────────
+  - package-ecosystem: "docker"
+    directories:
+      - "/src/adservice"
+      - "/src/cartservice/src"
+      - "/src/checkoutservice"
+      - "/src/currencyservice"
+      - "/src/emailservice"
+      - "/src/frontend"
+      - "/src/loadgenerator"
+      - "/src/paymentservice"
+      - "/src/productcatalogservice"
+      - "/src/recommendationservice"
+      - "/src/shippingservice"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+      - "docker"
+    commit-message:
+      prefix: "deps(docker):"
+
+  # ── GitHub Actions ─────────────────────────────────────────
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "deps(actions):"
