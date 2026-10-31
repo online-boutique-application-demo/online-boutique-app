@@ -319,7 +319,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=registry,ref=${{ steps.meta.outputs.image_base }}:buildcache
-          provenance: true
+          provenance: false
           sbom: false
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
