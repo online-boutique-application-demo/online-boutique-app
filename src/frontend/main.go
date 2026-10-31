@@ -1,4 +1,4 @@
-// Online Boutique - Stage 3 CD Pipeline verification
+// Online Boutique - Stage 6 DevSecOps security scanning verification
 // Copyright 2018 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
