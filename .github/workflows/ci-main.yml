@@ -30,6 +30,7 @@ permissions:
   id-token: write          # Required for OIDC authentication with AWS
   contents: read
   security-events: write   # Required for uploading SARIF security scan results
+  packages: write          # Required by ci-service.yml for Cosign image signing
 
 concurrency:
   group: ci-${{ github.ref }}
