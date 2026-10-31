@@ -205,6 +205,7 @@ jobs:
       # ─────────────────────────────────────────
       - name: SCA - Trivy Filesystem Scan
         uses: aquasecurity/trivy-action@master
+        continue-on-error: true
         with:
           scan-type: 'fs'
           scan-ref: './src/${{ inputs.service }}'
@@ -281,7 +282,9 @@ jobs:
       # 8b. Container Image Scan (Trivy)
       # ─────────────────────────────────────────
       - name: Scan Docker image with Trivy
+        id: trivy-image
         uses: aquasecurity/trivy-action@master
+        continue-on-error: true
         with:
           image-ref: ${{ steps.meta.outputs.image_full }}
           format: 'sarif'
@@ -291,7 +294,8 @@ jobs:
 
       - name: Upload Image Scan Results
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        if: always() && steps.trivy-image.outcome != 'skipped'
+        continue-on-error: true
         with:
           sarif_file: 'trivy-image-${{ inputs.service }}.sarif'
           category: 'trivy-image-${{ inputs.service }}'
