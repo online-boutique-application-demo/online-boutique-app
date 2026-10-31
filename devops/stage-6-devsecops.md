@@ -44,13 +44,35 @@ graph LR
 
 | Thuộc tính | Giá trị |
 |-----------|---------|
-| **Tool** | gitleaks v2 |
-| **Workflow** | `.github/workflows/security-scan.yml` |
+| **Tool** | gitleaks CLI v8.21.2 (open source, miễn phí) |
+| **Pre-commit hook** | `.githooks/pre-commit` (scan staged changes trước khi commit) |
+| **CI Workflow** | `.github/workflows/security-scan.yml` (safety net) |
 | **Config** | `.gitleaks.toml` |
-| **Trigger** | Push (main, feature/**, fix/**) + PR to main |
+| **Trigger (local)** | Tự động trước mỗi `git commit` |
+| **Trigger (CI)** | Push (main, feature/**, fix/**) + PR to main |
 | **Security Gate** | ❌ FAIL nếu phát hiện secret |
 
-**Chức năng:** Quét toàn bộ commit history tìm secrets, API keys, passwords bị commit nhầm.
+**Chức năng:** Quét secrets, API keys, passwords bị commit nhầm vào repo.
+
+**2 lớp bảo vệ:**
+1. **Pre-commit hook (local):** Chạy `gitleaks protect --staged` trước mỗi commit → chặn secret ngay tại máy dev
+2. **CI workflow (remote):** Chạy `gitleaks detect` trên toàn bộ repo → safety net cho trường hợp dev bypass hook
+
+**Cài đặt pre-commit hook:**
+```bash
+# Cách 1: Cấu hình git hooks path (khuyến nghị)
+git config core.hooksPath .githooks
+
+# Cách 2: Symlink (Linux/macOS)
+ln -sf ../../.githooks/pre-commit .git/hooks/pre-commit
+
+# Cài gitleaks CLI:
+# macOS:   brew install gitleaks
+# Windows: choco install gitleaks  hoặc  scoop install gitleaks
+# Linux:   wget từ GitHub releases
+```
+
+> **Lưu ý:** `gitleaks-action@v2` yêu cầu license trả phí cho organization. Dự án sử dụng gitleaks CLI trực tiếp (miễn phí).
 
 ### 2.2 SCA – Trivy Filesystem Scan
 
@@ -84,7 +106,7 @@ graph LR
 | **Config** | `sonar-project.properties` |
 | **Organization** | `online-boutique-application-demo` |
 | **Project Key** | `online-boutique-app` |
-| **Dashboard** | https://sonarcloud.io/project/overview?id=online-boutique-app |
+| **Dashboard** | https://sonarcloud.io/project/overview?id=online-boutique-application-demo_online-boutique-app |
 | **Security Gate** | ⚠️ WARN (review qua SonarCloud dashboard) |
 
 **Chức năng:** Phân tích static mã nguồn tìm bugs, vulnerabilities, code smells, security hotspots.
@@ -182,22 +204,24 @@ cosign verify \
  3. Install Dependencies
  4. Unit Tests
  5. Lint (go vet, flake8, eslint)
- ──── NEW SECURITY STEPS ────
+ ──── SECURITY STEPS (chạy trên MỌI branch) ────
  5.5. Hadolint (Dockerfile lint)           [WARN]
  5.6. Trivy FS Scan (SCA)                  [FAIL on CRITICAL/HIGH]
  ──── BUILD → SCAN → SIGN → PUSH ────
  6. Compute image tags
  7. AWS OIDC + ECR Login
  8. Set up Docker Buildx
- 8a. Docker Build (LOCAL only)
- 8b. Trivy Image Scan                      [FAIL on CRITICAL]
- 8c. Install Cosign
- 8d. Push to ECR (only if scan passes)
- 8e. Cosign Sign (keyless)
+ 8a. Docker Build (LOCAL only)             ← chạy trên mọi branch
+ 8b. Trivy Image Scan                      [FAIL on CRITICAL] ← chạy trên mọi branch
+ 8c. Install Cosign                        ← chỉ main (push_to_ecr)
+ 8d. Push to ECR                           ← chỉ main (push_to_ecr)
+ 8e. Cosign Sign (keyless)                 ← chỉ main (push_to_ecr)
  ──── DEPLOY ────
- 9. Update manifests in config repo
+ 9. Update manifests in config repo        ← chỉ main
  10. Summary
 ```
+
+> **Quan trọng:** Hadolint, Trivy FS, Docker Build local, và Trivy Image Scan chạy trên **tất cả branches** (main, feature/**, fix/**). Chỉ có Push ECR, Cosign Sign, và Update manifests chỉ chạy trên `main`.
 
 ### 3.2 Luồng ci-main.yml (orchestrator)
 
@@ -237,6 +261,7 @@ cosign verify \
 | `.github/workflows/ci-main.yml` | ✅ Sửa (thêm SonarCloud job + permissions) |
 | `.github/workflows/ci-service.yml` | ✅ Sửa (thêm Hadolint, Trivy, Cosign, refactor build/push) |
 | `.github/dependabot.yml` | ✅ Tạo mới |
+| `.githooks/pre-commit` | ✅ Tạo mới (gitleaks pre-commit hook) |
 | `sonar-project.properties` | ✅ Tạo mới |
 | `.gitleaks.toml` | ✅ Tạo mới |
 | `.zap/rules.tsv` | ✅ Tạo mới |
