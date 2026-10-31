@@ -171,6 +171,11 @@ cosign verify \
 3. Chọn scan type: `baseline` (nhanh) hoặc `full` (kỹ)
 4. Xem report trong Artifacts
 
+> **⚠️ Lưu ý:** Workflow `dast-scan.yml` sử dụng trigger `workflow_dispatch` (chạy thủ công). Workflow này **chỉ hiển thị** trong GitHub Actions UI khi file tồn tại trên **default branch** (main). Nếu chưa merge PR vào main, có thể trigger qua CLI:
+> ```bash
+> gh workflow run "Security – DAST Scan (OWASP ZAP)" --ref feature/stage-6-devsecops -f target_url="http://<NLB-DNS>" -f scan_type=baseline
+> ```
+
 ### 2.9 Kyverno – Runtime Policy Engine
 
 | Thuộc tính | Giá trị |
@@ -348,6 +353,28 @@ cosign verify \
 4. **SARIF results** lưu trong GitHub → không mất khi destroy
 5. **DAST scan** cần app running → chạy sau deploy, trước destroy
 6. **Cleanup trước destroy:** Không cần dọn gì thêm — Kyverno CRDs tự xóa cùng cluster
+
+---
+
+## 7.5 Lưu Ý Về Trivy Scan (continue-on-error)
+
+> **Quyết định thiết kế:** Trivy FS Scan và Trivy Image Scan sử dụng `continue-on-error: true` trong CI pipeline.
+
+**Lý do:**
+- Online Boutique là **demo app upstream từ Google**. Dependencies (Go modules, base images) chứa CVEs đã biết mà ta **không thể tự fix** (cần Google upstream patch).
+- Nếu để `exit-code: 1` (hard fail), pipeline sẽ **luôn bị block** mỗi lần build bất kỳ service nào.
+
+**Hệ quả:**
+- Pipeline **KHÔNG bị block** bởi CVEs trong dependencies.
+- Findings **vẫn được upload** lên GitHub Security tab (SARIF reports) để dev review.
+- Steps hiển thị ⚠️ **WARNING** (vàng) trong GitHub Actions UI thay vì ❌ FAIL (đỏ).
+
+**Khi nào nên tắt `continue-on-error`:**
+- Khi tự viết app từ đầu (không fork upstream).
+- Khi dependencies đã được clean hết CVEs.
+- Khi chuyển sang production và muốn enforce strict security gates.
+
+**Cách tắt:** Xóa dòng `continue-on-error: true` trong `ci-service.yml` ở 2 steps: "SCA - Trivy Filesystem Scan" và "Scan Docker image with Trivy".
 
 ---
 
