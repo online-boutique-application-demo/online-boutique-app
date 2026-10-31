@@ -1,3 +1,4 @@
+// Stage 6 DevSecOps – Security scanning integrated
 // Online Boutique - Stage 3 CD Pipeline verification
 // Copyright 2018 Google LLC
 //

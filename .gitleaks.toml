@@ -1,0 +1,22 @@
+# gitleaks configuration for Online Boutique
+# Extends default rules and adds project-specific allowlists
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allowlist for false positives"
+paths = [
+  '''\.github/workflows/.*\.yml$''',
+  '''devops/.*\.md$''',
+  '''\.ai/.*\.md$''',
+  '''sonar-project\.properties$''',
+]
+
+# Ignore test data and example configs
+regexTarget = "line"
+regexes = [
+  '''EXAMPLE_.*=''',
+  '''dummy[-_]?secret''',
+  '''test[-_]?token''',
+]

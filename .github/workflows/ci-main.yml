@@ -27,8 +27,10 @@ on:
       - "LICENSE"
 
 permissions:
-  id-token: write   # Required for OIDC authentication with AWS
+  id-token: write          # Required for OIDC authentication with AWS
   contents: read
+  security-events: write   # Required for uploading SARIF security scan results
+  packages: write          # Required by ci-service.yml for Cosign image signing
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -93,7 +95,26 @@ jobs:
               - 'src/**'
 
 # ─────────────────────────────────────────────────────────────
-# JOB 2: Build each changed service in parallel
+# JOB 1.5: SAST – SonarCloud Analysis (runs once for entire repo)
+# ─────────────────────────────────────────────────────────────
+  sonarcloud:
+    name: "🔬 SAST – SonarCloud Analysis"
+    needs: detect-changes
+    if: needs.detect-changes.outputs.any_service == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+# ─────────────────────────────────────────────────────────────
+# JOB 3: Build each changed service in parallel
 # ─────────────────────────────────────────────────────────────
   build-adservice:
     name: "Build adservice (Java)"

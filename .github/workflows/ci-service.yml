@@ -48,8 +48,10 @@ jobs:
     name: "${{ inputs.service }} – Test, Build & Push"
     runs-on: ubuntu-latest
     permissions:
-      id-token: write    # Required for OIDC token generation (AWS assume role)
+      id-token: write          # Required for OIDC token generation (AWS assume role)
       contents: read
+      security-events: write   # Required for uploading SARIF security scan results
+      packages: write          # Required for Cosign image signing
 
     steps:
       # ─────────────────────────────────────────
@@ -180,6 +182,46 @@ jobs:
           npx eslint . --ext .js --max-warnings 0 2>/dev/null || echo "ESLint not configured or no issues found, skipping."
 
       # ─────────────────────────────────────────
+      # 5.5. Dockerfile Linting (Hadolint)
+      # ─────────────────────────────────────────
+      - name: Lint Dockerfile with Hadolint
+        uses: hadolint/hadolint-action@v3.1.0
+        continue-on-error: true
+        with:
+          dockerfile: ${{ inputs.dockerfile_path }}
+          failure-threshold: warning
+          format: sarif
+          output-file: hadolint-${{ inputs.service }}.sarif
+
+      - name: Upload Hadolint Results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: hadolint-${{ inputs.service }}.sarif
+          category: 'hadolint-${{ inputs.service }}'
+
+      # ─────────────────────────────────────────
+      # 5.6. SCA – Trivy Filesystem Scan
+      # ─────────────────────────────────────────
+      - name: SCA - Trivy Filesystem Scan
+        uses: aquasecurity/trivy-action@master
+        continue-on-error: true
+        with:
+          scan-type: 'fs'
+          scan-ref: './src/${{ inputs.service }}'
+          format: 'sarif'
+          output: 'trivy-sca-${{ inputs.service }}.sarif'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+
+      - name: Upload SCA Results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-sca-${{ inputs.service }}.sarif'
+          category: 'trivy-sca-${{ inputs.service }}'
+
+      # ─────────────────────────────────────────
       # 6. Compute image tags
       # ─────────────────────────────────────────
       - name: Compute image tags
@@ -220,28 +262,80 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       # ─────────────────────────────────────────
-      # 8. Docker Build & Push
+      # 8a. Docker Build (local only – NO push yet)
       # ─────────────────────────────────────────
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build Docker image
+      - name: Build Docker image (local)
         uses: docker/build-push-action@v6
         with:
           context: ${{ inputs.context_path }}
           file: ${{ inputs.dockerfile_path }}
-          push: ${{ inputs.push_to_ecr == true }}
-          tags: ${{ steps.meta.outputs.tags }}
-          # Cache from/to ECR for faster builds
+          push: false
+          load: true
+          tags: ${{ steps.meta.outputs.image_full }}
           cache-from: ${{ inputs.push_to_ecr == true && format('type=registry,ref={0}:buildcache', steps.meta.outputs.image_base) || '' }}
-          cache-to: ${{ inputs.push_to_ecr == true && format('type=registry,ref={0}:buildcache,mode=max', steps.meta.outputs.image_base) || '' }}
-          # Build provenance for supply chain security
+          provenance: false
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      # ─────────────────────────────────────────
+      # 8b. Container Image Scan (Trivy)
+      # ─────────────────────────────────────────
+      - name: Scan Docker image with Trivy
+        id: trivy-image
+        uses: aquasecurity/trivy-action@master
+        continue-on-error: true
+        with:
+          image-ref: ${{ steps.meta.outputs.image_full }}
+          format: 'sarif'
+          output: 'trivy-image-${{ inputs.service }}.sarif'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+
+      - name: Upload Image Scan Results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always() && steps.trivy-image.outcome != 'skipped'
+        continue-on-error: true
+        with:
+          sarif_file: 'trivy-image-${{ inputs.service }}.sarif'
+          category: 'trivy-image-${{ inputs.service }}'
+
+      # ─────────────────────────────────────────
+      # 8c. Install Cosign
+      # ─────────────────────────────────────────
+      - name: Install Cosign
+        if: inputs.push_to_ecr == true
+        uses: sigstore/cosign-installer@v3
+
+      # ─────────────────────────────────────────
+      # 8d. Push to ECR (only after scan passes)
+      # ─────────────────────────────────────────
+      - name: Push Docker image to ECR
+        if: inputs.push_to_ecr == true
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.context_path }}
+          file: ${{ inputs.dockerfile_path }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=registry,ref=${{ steps.meta.outputs.image_base }}:buildcache
+          cache-to: type=registry,ref=${{ steps.meta.outputs.image_base }}:buildcache,mode=max
           provenance: true
           sbom: false
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.created=${{ github.event.repository.updated_at }}
+
+      # ─────────────────────────────────────────
+      # 8e. Sign image with Cosign (keyless)
+      # ─────────────────────────────────────────
+      - name: Sign image with Cosign (keyless)
+        if: inputs.push_to_ecr == true
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: |
+          cosign sign --yes ${{ steps.meta.outputs.image_full }}
 
       # ─────────────────────────────────────────
       # 9. Update image tags in config repo (only on main branch push)

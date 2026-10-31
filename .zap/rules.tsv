@@ -1,0 +1,9 @@
+10003	IGNORE	Vulnerable JS Library (expected in demo app)
+10015	IGNORE	Incomplete or No Cache-control Header
+10021	IGNORE	X-Content-Type-Options Header Missing
+10036	IGNORE	Server Leaks Version Information via HTTP Response Header
+10038	IGNORE	Content Security Policy (CSP) Header Not Set
+10098	IGNORE	Cross-Domain Misconfiguration
+10109	IGNORE	Modern Web Application (informational)
+10112	IGNORE	Session Management Response Identified (informational)
+90033	IGNORE	Loosely Scoped Cookie (demo app uses broad cookies)

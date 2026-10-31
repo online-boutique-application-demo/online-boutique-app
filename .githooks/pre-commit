@@ -1,0 +1,44 @@
+#!/bin/sh
+# =============================================================================
+# Pre-commit hook – gitleaks secret detection
+# Scans staged changes for secrets before allowing commit.
+#
+# Installation:
+#   Option 1 (symlink):
+#     ln -sf ../../.githooks/pre-commit .git/hooks/pre-commit
+#
+#   Option 2 (git config):
+#     git config core.hooksPath .githooks
+#
+#   Windows (PowerShell):
+#     git config core.hooksPath .githooks
+# =============================================================================
+
+# Check if gitleaks is installed
+if ! command -v gitleaks &> /dev/null; then
+    echo "⚠️  gitleaks is not installed. Skipping secret scan."
+    echo "   Install: https://github.com/gitleaks/gitleaks#installing"
+    echo "   brew install gitleaks  (macOS)"
+    echo "   choco install gitleaks (Windows)"
+    echo "   scoop install gitleaks (Windows)"
+    exit 0
+fi
+
+echo "🔑 Running gitleaks pre-commit scan..."
+
+# Scan only staged changes (not entire history)
+gitleaks protect --staged --config .gitleaks.toml --redact --verbose
+
+EXIT_CODE=$?
+
+if [ $EXIT_CODE -ne 0 ]; then
+    echo ""
+    echo "❌ gitleaks detected secrets in staged changes!"
+    echo "   Please remove the secrets before committing."
+    echo "   To bypass (NOT recommended): git commit --no-verify"
+    exit 1
+fi
+
+echo "✅ No secrets detected."
+exit 0
+
