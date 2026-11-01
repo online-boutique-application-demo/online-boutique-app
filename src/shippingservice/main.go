@@ -183,3 +183,4 @@ func initProfiling(service, version string) {
 	}
 	log.Warn("could not initialize Stackdriver profiler after retrying, giving up")
 }
+// CI rebuild trigger - Stage 6 DevSecOps provenance fix

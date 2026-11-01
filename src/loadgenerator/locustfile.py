@@ -92,3 +92,4 @@ class UserBehavior(TaskSet):
 class WebsiteUser(FastHttpUser):
     tasks = [UserBehavior]
     wait_time = between(1, 10)
+# CI rebuild trigger - Stage 6 DevSecOps provenance fix

@@ -238,3 +238,4 @@ public final class AdService {
     service.blockUntilShutdown();
   }
 }
+// CI rebuild trigger - Stage 6 DevSecOps provenance fix
