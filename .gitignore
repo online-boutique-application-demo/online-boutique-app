@@ -43,3 +43,5 @@ pkg/
 release/wi-kubernetes-manifests.yaml
 vendor/
 gha-creds-*.json
+.antigravityrules
+.zap/report_html.html

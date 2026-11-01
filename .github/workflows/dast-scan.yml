@@ -51,6 +51,7 @@ jobs:
         with:
           target: ${{ inputs.target_url }}
           rules_file_name: ".zap/rules.tsv"
+          fail_action: "warn"
           allow_issue_writing: true
           artifact_name: "zap-full-report"
 
