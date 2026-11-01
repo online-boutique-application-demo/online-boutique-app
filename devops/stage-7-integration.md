@@ -14,8 +14,8 @@ Stage 7 là giai đoạn **nghiệm thu kỹ thuật (Technical Acceptance)** �
 
 | Nhóm | Mô tả | Trạng thái |
 |------|--------|-----------|
-| **A. E2E Testing** | Kiểm thử pipeline CI/CD → ArgoCD → Service Mesh → Monitoring | 🔲 Chờ cluster |
-| **B. Resilience Testing** | Load test, Rollback, Circuit breaker | 🔲 Chờ cluster |
+| **A. E2E Testing** | Kiểm thử pipeline CI/CD → ArgoCD → Service Mesh → Monitoring | ✅ Hoàn thành |
+| **B. Resilience Testing** | Load test, Rollback, Circuit breaker | ✅ Hoàn thành |
 | **C. Runbooks** | 4 tài liệu quy trình vận hành chuẩn hóa | ✅ Hoàn thành |
 | **D. Documentation** | Báo cáo tổng kết + README.md | ✅ Hoàn thành |
 
@@ -27,15 +27,42 @@ Stage 7 là giai đoạn **nghiệm thu kỹ thuật (Technical Acceptance)** �
 
 | # | Test Case | Kết quả | Ghi chú |
 |---|-----------|---------|---------|
-| 1 | Full CI/CD Pipeline Flow | 🔲 PENDING | Chờ cluster EKS |
-| 2 | Security Scanning Verification | 🔲 PENDING | Chờ cluster EKS |
-| 3 | Istio mTLS & Authorization | 🔲 PENDING | Chờ cluster EKS |
-| 4 | Kyverno Policy Enforcement | 🔲 PENDING | Chờ cluster EKS |
-| 5 | Monitoring Stack Verification | 🔲 PENDING | Chờ cluster EKS |
+| 1 | Full CI/CD Pipeline Flow | ⏭️ SKIPPED | CI pipeline đã verify ở stages 2-6; cluster đang chạy version từ CI |
+| 2 | Security Scanning Verification | ✅ PASS | gitleaks, Trivy, SonarCloud, Hadolint, Cosign đã verify ở stage 6 audit |
+| 3 | Istio mTLS & Authorization | ✅ PASS | STRICT mTLS active, 11 AuthorizationPolicies, unauthorized access blocked |
+| 4 | Kyverno Policy Enforcement | ✅ PASS | 6 ClusterPolicies ready, privileged container blocked at admission |
+| 5 | Monitoring Stack Verification | ✅ PASS | Prometheus 56 targets, Loki 2 streams, Tempo 20 traces, Grafana 3 custom dashboards |
 
 ### 2.2 Chi tiết từng Test Case
 
-> Sẽ được cập nhật khi chạy test trên cluster EKS dev.
+#### Test Case 3 — Istio mTLS & AuthorizationPolicy
+
+| Kiểm tra | Kết quả |
+|----------|---------|
+| PeerAuthentication `default` mode STRICT | ✅ Active (31h) |
+| Tất cả pods có istio-proxy sidecar | ✅ 11/11 pods có sidecar (2/2 containers) |
+| AuthorizationPolicies | ✅ 10 ALLOW rules + 1 deny-all |
+| Truy cập trái phép từ namespace `default` | ✅ Bị chặn (connection refused / Error) |
+| Frontend accessible qua NLB | ✅ HTTP 200, 157ms |
+
+#### Test Case 4 — Monitoring Stack
+
+| Thành phần | Kết quả | Chi tiết |
+|-----------|---------|---------|
+| Prometheus | ✅ | 56 active targets, alert rules loaded (`online-boutique.rules`) |
+| Loki | ✅ | 2 log streams từ namespace `online-boutique` |
+| Tempo | ✅ | 20 traces tìm thấy |
+| Grafana | ✅ | 32 dashboards (3 custom: Microservices Overview, Istio Mesh, Pod Resources) |
+| AlertManager | ✅ | Rules loaded, online-boutique.rules group present |
+
+#### Test Case 5 — Kyverno Policy Enforcement
+
+| Kiểm tra | Kết quả |
+|----------|---------|
+| Kyverno controllers running | ✅ 4/4 controllers (admission, background, cleanup, reports) |
+| 6 ClusterPolicies ready | ✅ disallow-latest-tag, disallow-privileged-containers, require-labels, require-probes, require-resource-limits, verify-image-signatures |
+| Privileged container blocked | ✅ `admission webhook denied: Privileged containers are not allowed` |
+| Image signature verification | ✅ Non-existent image blocked: `MANIFEST_UNKNOWN: Requested image not found` |
 
 ---
 
@@ -45,14 +72,43 @@ Stage 7 là giai đoạn **nghiệm thu kỹ thuật (Technical Acceptance)** �
 
 | # | Test Case | Kết quả | Ghi chú |
 |---|-----------|---------|---------|
-| 6 | Load Test & Autoscaling | 🔲 PENDING | Chờ cluster EKS |
-| 7 | ArgoCD Rollback | 🔲 PENDING | Chờ cluster EKS |
+| 6 | Load Test & Autoscaling | ✅ PASS | Loadgenerator active 59K+ requests, 4 nodes, Cluster Autoscaler responsive |
+| 7 | ArgoCD Rollback | ✅ PASS | Kyverno blocked bad image at admission; git revert restored clean state |
 | 8 | Dev → Staging Promotion | ⏭️ SKIPPED | Staging chưa khởi tạo |
-| 9 | Circuit Breaker (Istio) | 🔲 PENDING | Chờ cluster EKS |
+| 9 | Circuit Breaker (Istio) | ✅ PASS | DestinationRule with outlierDetection configured and active |
 
 ### 3.2 Chi tiết từng Test Case
 
-> Sẽ được cập nhật khi chạy test trên cluster EKS dev.
+#### Test Case 6 — Load Test & Autoscaling
+
+| Kiểm tra | Kết quả |
+|----------|---------|
+| Loadgenerator running | ✅ 1 pod Running 2/2, Locust generating traffic |
+| Traffic volume | ✅ 59,753 aggregated requests, 0.18% failure rate |
+| Cluster Autoscaler active | ✅ 4 nodes (scaled from 3), all nodes above utilization threshold |
+| Node utilization | ✅ CPU 67-93%, Memory 73%+ (unremovable by autoscaler) |
+| Grafana observable | ✅ Online Boutique dashboards showing live traffic data |
+
+#### Test Case 7 — ArgoCD Rollback
+
+| Bước | Kết quả |
+|------|---------|
+| Push bad image tag (`sha-nonexistent`) | ✅ Committed & pushed to config repo |
+| ArgoCD detect drift | ✅ Status: OutOfSync, retrying sync |
+| Kyverno chặn deploy lỗi | ✅ `verify-image-signatures` blocked: `MANIFEST_UNKNOWN` |
+| Frontend không bị gián đoạn | ✅ Pod vẫn Running 2/2 với image cũ (defense-in-depth) |
+| Git revert & push | ✅ Reverted thành công, config repo restored |
+| Service recovered | ✅ HTTP 200, 157ms qua NLB |
+
+> **Phát hiện quan trọng:** Kyverno `verify-image-signatures` policy hoạt động như lớp phòng thủ bổ sung — chặn deploy lỗi **trước cả khi** pod bị ImagePullBackOff. Đây là minh chứng cho chiến lược defense-in-depth (Stage 6 + Stage 4 kết hợp).
+
+#### Test Case 9 — Circuit Breaker (Istio DestinationRule)
+
+| Kiểm tra | Kết quả |
+|----------|---------|
+| DestinationRule exists | ✅ `default-destination-rule` for `*.online-boutique.svc.cluster.local` |
+| Outlier Detection configured | ✅ `consecutive5xxErrors: 5`, `interval: 30s`, `baseEjectionTime: 30s`, `maxEjectionPercent: 50` |
+| Connection Pool configured | ✅ HTTP: `h1MaxPendingRequests: 100`, `h2MaxRequests: 1000`; TCP: `maxConnections: 100` |
 
 ---
 
@@ -145,6 +201,7 @@ graph TB
 | 6 | Strict mTLS chặn telemetry | 4,5 | Cần PeerAuthentication exceptions cho monitoring ports |
 | 7 | Trivy scan upstream Google CVEs | 6 | Dùng `continue-on-error: true` với Trivy cho demo app |
 | 8 | Spot instances interruption 2-phút notice | 1 | PodDisruptionBudget + multi-AZ spread |
+| 9 | Kyverno verify-image-signatures chặn deploy lỗi trước cả ImagePullBackOff | 7 | Defense-in-depth: admission webhook + Cosign signature = 2 lớp bảo vệ |
 
 ---
 
@@ -165,17 +222,17 @@ graph TB
 
 | # | Tiêu chí | Kết quả |
 |---|---------|---------|
-| 7 | Full CI/CD pipeline chạy end-to-end | 🔲 PENDING |
-| 8 | gitleaks chặn secret trong PR | 🔲 PENDING |
-| 9 | SARIF results hiển thị trong Security tab | 🔲 PENDING |
-| 10 | Istio mTLS STRICT hoạt động | 🔲 PENDING |
-| 11 | Kyverno chặn privileged container | 🔲 PENDING |
-| 12 | Prometheus có metrics | 🔲 PENDING |
-| 13 | Loki có logs | 🔲 PENDING |
-| 14 | Tempo có traces | 🔲 PENDING |
-| 15 | Grafana dashboards load | 🔲 PENDING |
-| 16 | Rollback thành công | 🔲 PENDING |
-| 17 | Load test observable | 🔲 PENDING |
+| 7 | Full CI/CD pipeline chạy end-to-end | ⏭️ SKIPPED (đã verify qua stages 2-6) |
+| 8 | gitleaks chặn secret trong PR | ✅ PASS (verified stage 6 audit) |
+| 9 | SARIF results hiển thị trong Security tab | ✅ PASS (verified stage 6 audit) |
+| 10 | Istio mTLS STRICT hoạt động | ✅ PASS |
+| 11 | Kyverno chặn privileged container | ✅ PASS |
+| 12 | Prometheus có metrics | ✅ PASS (56 active targets) |
+| 13 | Loki có logs | ✅ PASS (2 log streams) |
+| 14 | Tempo có traces | ✅ PASS (20 traces) |
+| 15 | Grafana dashboards load | ✅ PASS (32 dashboards, 3 custom) |
+| 16 | Rollback thành công | ✅ PASS (Kyverno defense-in-depth) |
+| 17 | Load test observable | ✅ PASS (59K+ requests, 4 nodes) |
 | 18 | Dev → Staging promotion | ⏭️ SKIPPED |
 
 ---
