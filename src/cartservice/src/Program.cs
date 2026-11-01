@@ -26,3 +26,4 @@ static IHostBuilder CreateHostBuilder(string[] args) =>
         {
             webBuilder.UseStartup<Startup>();
         });
+// CI rebuild trigger - Stage 6 DevSecOps provenance fix

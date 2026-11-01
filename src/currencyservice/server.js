@@ -198,3 +198,4 @@ function main () {
 }
 
 main();
+// CI rebuild trigger - Stage 6 DevSecOps provenance fix
