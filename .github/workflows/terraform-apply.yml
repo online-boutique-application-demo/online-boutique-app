@@ -19,7 +19,7 @@ permissions:
   contents: read
 
 env:
-  AWS_REGION: ap-southeast-1
+  AWS_REGION: ${{ vars.AWS_REGION }}
   TF_VERSION: "1.10.5"
 
 jobs:
@@ -70,7 +70,7 @@ jobs:
       - name: Configure AWS credentials (OIDC – Terraform role)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::798836978890:role/online-boutique-github-terraform
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/online-boutique-github-terraform
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Setup Terraform
@@ -84,8 +84,33 @@ jobs:
       - name: Terraform Validate
         run: terraform validate -no-color
 
+      - name: Generate terraform.tfvars
+        run: |
+          cat > terraform.tfvars <<'TFVARS'
+          aws_region   = "${{ vars.AWS_REGION }}"
+          project_name = "online-boutique"
+          environment  = "dev"
+          vpc_cidr           = "10.0.0.0/16"
+          az_count           = 3
+          single_nat_gateway = true
+          cluster_version     = "1.36"
+          node_instance_types = ["t3.medium"]
+          capacity_type       = "SPOT"
+          node_disk_size      = 50
+          node_desired_size   = 3
+          node_min_size       = 2
+          node_max_size       = 5
+          cluster_admin_arns = [
+            "arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:user/${{ vars.IAM_USERNAME }}",
+            "arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/online-boutique-github-terraform",
+          ]
+          redis_version            = "7.1"
+          redis_node_type          = "cache.t3.micro"
+          redis_num_cache_clusters = 2
+          TFVARS
+
       - name: Terraform Plan
-        run: terraform plan -no-color -input=false -var-file=terraform.tfvars.example -out=tfplan
+        run: terraform plan -no-color -input=false -var-file=terraform.tfvars -out=tfplan
 
       - name: Terraform Apply
         run: terraform apply -auto-approve -input=false tfplan
@@ -116,7 +141,7 @@ jobs:
       - name: Configure AWS credentials (OIDC – Terraform role)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::798836978890:role/online-boutique-github-terraform
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/online-boutique-github-terraform
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Setup Terraform
@@ -127,8 +152,33 @@ jobs:
       - name: Terraform Init
         run: terraform init -input=false
 
+      - name: Generate terraform.tfvars
+        run: |
+          cat > terraform.tfvars <<'TFVARS'
+          aws_region   = "${{ vars.AWS_REGION }}"
+          project_name = "online-boutique"
+          environment  = "staging"
+          vpc_cidr           = "10.1.0.0/16"
+          az_count           = 3
+          single_nat_gateway = true
+          cluster_version     = "1.36"
+          node_instance_types = ["t3.medium"]
+          capacity_type       = "SPOT"
+          node_disk_size      = 50
+          node_desired_size   = 3
+          node_min_size       = 2
+          node_max_size       = 5
+          cluster_admin_arns = [
+            "arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:user/${{ vars.IAM_USERNAME }}",
+            "arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/online-boutique-github-terraform",
+          ]
+          redis_version            = "7.1"
+          redis_node_type          = "cache.t3.micro"
+          redis_num_cache_clusters = 2
+          TFVARS
+
       - name: Terraform Plan
-        run: terraform plan -no-color -input=false -var-file=terraform.tfvars.example -out=tfplan
+        run: terraform plan -no-color -input=false -var-file=terraform.tfvars -out=tfplan
 
       - name: Terraform Apply
         run: terraform apply -auto-approve -input=false tfplan
@@ -152,7 +202,7 @@ jobs:
       - name: Configure AWS credentials (OIDC – Terraform role)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::798836978890:role/online-boutique-github-terraform
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/online-boutique-github-terraform
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Setup Terraform
@@ -185,7 +235,7 @@ jobs:
       - name: Configure AWS credentials (OIDC – Terraform role)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::798836978890:role/online-boutique-github-terraform
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/online-boutique-github-terraform
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Setup Terraform

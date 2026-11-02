@@ -79,7 +79,7 @@ sequenceDiagram
 
 ##### Linux / macOS (Bash):
 ```bash
-cd /d/online-boutique/online-boutique-config
+cd <PROJECT_ROOT>/online-boutique-config
 git checkout main
 git pull origin main
 
@@ -89,7 +89,7 @@ git log --oneline -n 5
 
 ##### Windows (PowerShell):
 ```powershell
-Set-Location -Path "d:\online-boutique\online-boutique-config"
+Set-Location -Path "<PROJECT_ROOT>\online-boutique-config"
 git checkout main
 git pull origin main
 
@@ -339,7 +339,7 @@ Sau khi hệ thống đã hồi phục và hoạt động bình thường:
 
 ##### Linux / macOS (Bash):
 ```bash
-cd /d/online-boutique/online-boutique-config
+cd <PROJECT_ROOT>/online-boutique-config
 git add overlays/dev/kustomization.yaml
 git commit -m "fix(gitops): reconcile checkoutservice image tag after emergency rollback"
 git push origin main
@@ -350,7 +350,7 @@ argocd app set online-boutique-dev --sync-policy automated --auto-prune --self-h
 
 ##### Windows (PowerShell):
 ```powershell
-Set-Location -Path "d:\online-boutique\online-boutique-config"
+Set-Location -Path "<PROJECT_ROOT>\online-boutique-config"
 git add overlays/dev/kustomization.yaml
 git commit -m "fix(gitops): reconcile checkoutservice image tag after emergency rollback"
 git push origin main
@@ -390,7 +390,7 @@ flowchart LR
 
 ##### Linux / macOS (Bash):
 ```bash
-cd /d/online-boutique/online-boutique-app/terraform-aws/environments/dev
+cd <PROJECT_ROOT>/online-boutique-app/terraform-aws/environments/dev
 
 # 1. Checkout phiên bản commit Terraform ổn định trước đó
 git log --oneline -n 5
@@ -408,7 +408,7 @@ git checkout HEAD -- .
 
 ##### Windows (PowerShell):
 ```powershell
-Set-Location -Path "d:\online-boutique\online-boutique-app\terraform-aws\environments\dev"
+Set-Location -Path "<PROJECT_ROOT>\online-boutique-app\terraform-aws\environments\dev"
 
 # 1. Checkout phiên bản commit Terraform ổn định trước đó
 git log --oneline -n 5
@@ -435,13 +435,13 @@ Nếu quá trình apply trước đó bị ngắt đột ngột (do hủy workfl
 
 ##### Linux / macOS (Bash):
 ```bash
-cd /d/online-boutique/online-boutique-app/terraform-aws/environments/dev
+cd <PROJECT_ROOT>/online-boutique-app/terraform-aws/environments/dev
 terraform force-unlock -force <LOCK-ID>
 ```
 
 ##### Windows (PowerShell):
 ```powershell
-Set-Location -Path "d:\online-boutique\online-boutique-app\terraform-aws\environments\dev"
+Set-Location -Path "<PROJECT_ROOT>\online-boutique-app\terraform-aws\environments\dev"
 terraform force-unlock -force <LOCK-ID>
 ```
 

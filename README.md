@@ -1,7 +1,7 @@
 # 🛍️ Online Boutique — DevOps End-to-End on AWS
 
-[![CI – Build & Push to ECR](https://github.com/online-boutique-application-demo/online-boutique-app/actions/workflows/ci-main.yml/badge.svg)](https://github.com/online-boutique-application-demo/online-boutique-app/actions/workflows/ci-main.yml)
-[![Security Scan](https://github.com/online-boutique-application-demo/online-boutique-app/actions/workflows/security-scan.yml/badge.svg)](https://github.com/online-boutique-application-demo/online-boutique-app/actions/workflows/security-scan.yml)
+[![CI – Build & Push to ECR](https://github.com/<GITHUB_ORG>/online-boutique-app/actions/workflows/ci-main.yml/badge.svg)](https://github.com/<GITHUB_ORG>/online-boutique-app/actions/workflows/ci-main.yml)
+[![Security Scan](https://github.com/<GITHUB_ORG>/online-boutique-app/actions/workflows/security-scan.yml/badge.svg)](https://github.com/<GITHUB_ORG>/online-boutique-app/actions/workflows/security-scan.yml)
 [![Amazon EKS](https://img.shields.io/badge/Amazon%20EKS-v1.36-FF9900?logo=amazon-aws&logoColor=white)](https://aws.amazon.com/eks/)
 [![Terraform](https://img.shields.io/badge/IaC-Terraform_v1.10+-7B42BC?logo=terraform&logoColor=white)](https://www.terraform.io/)
 [![ArgoCD](https://img.shields.io/badge/GitOps-ArgoCD-EF7B4D?logo=argo&logoColor=white)](https://argo-cd.readthedocs.io/)
@@ -26,7 +26,7 @@
 
 ## 🏛️ System Architecture
 
-The following diagram illustrates the complete infrastructure topology provisioned on AWS (`ap-southeast-1`, Account ID: `798836978890`):
+The following diagram illustrates the complete infrastructure topology provisioned on AWS (`<AWS_REGION>`, Account ID: `<AWS_ACCOUNT_ID>`):
 
 ```mermaid
 graph TB
@@ -34,7 +34,7 @@ graph TB
         USER[End Users]
     end
 
-    subgraph "AWS Cloud (Account: 798836978890 | ap-southeast-1)"
+    subgraph "AWS Cloud (Account: <AWS_ACCOUNT_ID> | <AWS_REGION>)"
         subgraph "VPC - 10.0.0.0/16"
             subgraph "Public Subnets"
                 ALB[AWS Network Load Balancer / ALB]
@@ -180,7 +180,7 @@ sequenceDiagram
     actor Dev as Developer
     participant GH as GitHub (online-boutique-app)
     participant CI as GitHub Actions
-    participant ECR as AWS ECR (ap-southeast-1)
+    participant ECR as AWS ECR (<AWS_REGION>)
     participant Cfg as GitHub (online-boutique-config)
     participant Argo as ArgoCD (EKS)
     participant EKS as Amazon EKS Cluster
@@ -291,7 +291,7 @@ graph TD
 ## ⚡ Quick Start
 
 ### 1. Prerequisites
-- **AWS CLI v2** configured with Administrator permissions to account `798836978890`.
+- **AWS CLI v2** configured with Administrator permissions to account `<AWS_ACCOUNT_ID>`.
 - **Terraform** (`>= 1.10.0`)
 - **kubectl** (`>= 1.30.0`)
 - **Helm** (`>= 3.14.0`)
@@ -300,8 +300,8 @@ graph TD
 ### 2. Infrastructure Provisioning
 ```bash
 # Clone both repositories
-git clone https://github.com/online-boutique-application-demo/online-boutique-app.git
-git clone https://github.com/online-boutique-application-demo/online-boutique-config.git
+git clone https://github.com/<GITHUB_ORG>/online-boutique-app.git
+git clone https://github.com/<GITHUB_ORG>/online-boutique-config.git
 
 # Initialize and apply Terraform (Dev Environment)
 cd online-boutique-app/terraform-aws/environments/dev
@@ -309,7 +309,7 @@ terraform init
 terraform apply -auto-approve
 
 # Configure local kubectl context
-aws eks update-kubeconfig --region ap-southeast-1 --name online-boutique-dev
+aws eks update-kubeconfig --region <AWS_REGION> --name <EKS_CLUSTER_NAME>
 ```
 
 ### 3. ArgoCD & Application Bootstrap
@@ -392,7 +392,7 @@ Comprehensive guides, architectural decisions, and operational playbooks:
 
 ## 💰 Cost Estimation & Optimization
 
-Monthly estimated expenses configured for AWS Region `ap-southeast-1`:
+Monthly estimated expenses configured for AWS Region `<AWS_REGION>`:
 
 | Resource | Dev Environment | Staging Environment | Total Monthly |
 |----------|-----------------|---------------------|---------------|
@@ -413,4 +413,4 @@ Monthly estimated expenses configured for AWS Region `ap-southeast-1`:
 ## 👏 Acknowledgements & Credits
 
 - **Original Application:** The core application architecture is based on the [Google Cloud Microservices Demo (Online Boutique)](https://github.com/GoogleCloudPlatform/microservices-demo).
-- **DevOps Architecture & Implementation:** Re-architected and engineered for AWS by **[minhhuy27](https://github.com/minhhuy27)** (`dp1.2a4.minhhuy@gmail.com`).
+- **DevOps Architecture & Implementation:** Re-architected and engineered for AWS by **[<YOUR_GITHUB_USERNAME>](https://github.com/<YOUR_GITHUB_USERNAME>)** (`<YOUR_EMAIL>`).

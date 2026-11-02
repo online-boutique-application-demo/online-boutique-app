@@ -37,9 +37,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  AWS_REGION: ap-southeast-1
-  AWS_ACCOUNT_ID: "798836978890"
-  ECR_REGISTRY: 798836978890.dkr.ecr.ap-southeast-1.amazonaws.com
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+  ECR_REGISTRY: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
 
 # ─────────────────────────────────────────────────────────────
 # JOB 1: Detect which services have changed

@@ -1,7 +1,7 @@
 # 🛠️ Runbook: Xử Lý Sự Cố Hệ Thống (Troubleshooting Guide)
 
 > **Dành cho:** Kỹ sư Vận hành (SRE) / DevOps Engineer phụ trách hệ thống Online Boutique trên AWS EKS.  
-> **Phạm vi áp dụng:** Cụm EKS `online-boutique-dev` (v1.36), khu vực `ap-southeast-1`, tài khoản AWS `798836978890`.  
+> **Phạm vi áp dụng:** Cụm EKS `<EKS_CLUSTER_NAME>` (v1.36), khu vực `<AWS_REGION>`, tài khoản AWS `<AWS_ACCOUNT_ID>`.  
 > **Quy chuẩn xử lý:** Mọi sự cố được phân tích theo chu trình chuẩn 5 bước:  
 > **Triệu chứng → Nguyên nhân → Lệnh chẩn đoán → Giải pháp → Phòng ngừa**.
 
@@ -110,7 +110,7 @@ Pod ở trạng thái `ImagePullBackOff` hoặc `ErrImagePull`. Pod không thể
 #### Nguyên nhân phổ biến:
 1. **Tag image không tồn tại trên AWS ECR:** Pipeline CI chưa kịp hoàn tất việc push hoặc commit tag (`sha-<commit>`) bị sai khác giữa code repo và manifest GitOps repo.
 2. **Quyền IAM của EKS Node Group bị thiếu:** Worker node không thể authenticate với ECR Private Registry (thiếu quyền `ecr:GetAuthorizationToken` hoặc `ecr:BatchGetImage`).
-3. **Khai báo sai URI của ECR Repository:** Sai AWS Account ID (`798836978890`), sai region (`ap-southeast-1`), hoặc sai tên repository microservice.
+3. **Khai báo sai URI của ECR Repository:** Sai AWS Account ID (`<AWS_ACCOUNT_ID>`), sai region (`<AWS_REGION>`), hoặc sai tên repository microservice.
 4. **Kyverno chặn do vi phạm chữ ký Cosign:** Image chưa được ký hoặc chứng chỉ chữ ký không khớp với Root CA Sigstore/Fulcio.
 
 #### Lệnh chẩn đoán:
@@ -126,7 +126,7 @@ kubectl get pod <pod-name> -n online-boutique -o jsonpath='{.spec.containers[*].
 # 3. Kiểm tra xem image tag có thực sự tồn tại trên AWS ECR không
 aws ecr describe-images \
   --repository-name online-boutique/<service-name> \
-  --region ap-southeast-1 \
+  --region <AWS_REGION> \
   --query 'imageDetails[*].imageTags' \
   --output table
 
@@ -145,7 +145,7 @@ kubectl get pod <pod-name> -n online-boutique -o jsonpath='{.spec.containers[*].
 # 3. Kiểm tra xem image tag có thực sự tồn tại trên AWS ECR không
 aws ecr describe-images `
   --repository-name online-boutique/<service-name> `
-  --region ap-southeast-1 `
+  --region <AWS_REGION> `
   --query 'imageDetails[*].imageTags' `
   --output table
 
@@ -158,10 +158,10 @@ kubectl get policyreport -n online-boutique
 - **Nếu tag bị gõ nhầm:** Sửa trường `newTag` trong `online-boutique-config/overlays/dev/kustomization.yaml` khớp với SHA trên ECR:
   ```yaml
   images:
-    - name: 798836978890.dkr.ecr.ap-southeast-1.amazonaws.com/online-boutique/frontend
+    - name: <AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/online-boutique/frontend
       newTag: sha-a1b2c3d
   ```
-- **Nếu lỗi xác thực IAM:** Kiểm tra role đính kèm vào EKS Node Group (`online-boutique-dev-eks-nodes-role`). Đảm bảo policy `AmazonEC2ContainerRegistryReadOnly` được attach.
+- **Nếu lỗi xác thực IAM:** Kiểm tra role đính kèm vào EKS Node Group (`<EKS_CLUSTER_NAME>-eks-nodes-role`). Đảm bảo policy `AmazonEC2ContainerRegistryReadOnly` được attach.
 
 #### Phòng ngừa:
 - Quy trình CI tự động sử dụng composite action `update-manifests` commit trực tiếp image tag vừa build vào repository config, tránh chỉnh sửa thủ công.
@@ -394,8 +394,8 @@ kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controll
 kubectl get gateway,virtualservice -n online-boutique
 
 # 4. Kiểm tra sức khỏe của Target Group trên AWS qua AWS CLI
-TG_ARN=$(aws elbv2 describe-target-groups --region ap-southeast-1 --query "TargetGroups[?contains(TargetGroupName, 'istio')].TargetGroupArn" --output text)
-aws elbv2 describe-target-health --target-group-arn $TG_ARN --region ap-southeast-1
+TG_ARN=$(aws elbv2 describe-target-groups --region <AWS_REGION> --query "TargetGroups[?contains(TargetGroupName, 'istio')].TargetGroupArn" --output text)
+aws elbv2 describe-target-health --target-group-arn $TG_ARN --region <AWS_REGION>
 
 # 5. Kiểm tra kết nối trực tiếp vào Ingress Gateway pod từ bên trong cụm
 kubectl exec -n istio-system deployment/istio-ingressgateway -- curl -s -I http://localhost:8080/
@@ -413,8 +413,8 @@ kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controll
 kubectl get gateway,virtualservice -n online-boutique
 
 # 4. Kiểm tra sức khỏe của Target Group trên AWS qua AWS CLI
-$TG_ARN = (aws elbv2 describe-target-groups --region ap-southeast-1 --query "TargetGroups[?contains(TargetGroupName, 'istio')].TargetGroupArn" --output text)
-aws elbv2 describe-target-health --target-group-arn $TG_ARN --region ap-southeast-1
+$TG_ARN = (aws elbv2 describe-target-groups --region <AWS_REGION> --query "TargetGroups[?contains(TargetGroupName, 'istio')].TargetGroupArn" --output text)
+aws elbv2 describe-target-health --target-group-arn $TG_ARN --region <AWS_REGION>
 
 # 5. Thử kiểm tra curl tới DNS của Ingress Gateway
 $NLB_DNS = (kubectl get svc istio-ingressgateway -n istio-system -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
@@ -467,7 +467,7 @@ aws iam get-role --role-name online-boutique-github-ci --query 'Role.AssumeRoleP
 aws iam list-open-id-connect-providers
 
 # 3. Xem chi tiết thông số OpenID Connect Provider
-aws iam get-open-id-connect-provider --open-id-connect-provider-arn arn:aws:iam::798836978890:oidc-provider/token.actions.githubusercontent.com
+aws iam get-open-id-connect-provider --open-id-connect-provider-arn arn:aws:iam::<AWS_ACCOUNT_ID>:oidc-provider/token.actions.githubusercontent.com
 ```
 
 ##### Trên Windows (PowerShell):
@@ -479,7 +479,7 @@ aws iam get-role --role-name online-boutique-github-ci --query 'Role.AssumeRoleP
 aws iam list-open-id-connect-providers
 
 # 3. Xem chi tiết thông số OpenID Connect Provider
-aws iam get-open-id-connect-provider --open-id-connect-provider-arn arn:aws:iam::798836978890:oidc-provider/token.actions.githubusercontent.com
+aws iam get-open-id-connect-provider --open-id-connect-provider-arn arn:aws:iam::<AWS_ACCOUNT_ID>:oidc-provider/token.actions.githubusercontent.com
 ```
 
 #### Giải pháp:
@@ -526,25 +526,25 @@ Bước `Push to ECR` trong GitHub Actions bị lỗi:
 ##### Trên Linux / macOS (Bash):
 ```bash
 # 1. Kiểm tra danh sách 11 ECR repositories hiện có
-aws ecr describe-repositories --region ap-southeast-1 --query 'repositories[*].repositoryName' --output table
+aws ecr describe-repositories --region <AWS_REGION> --query 'repositories[*].repositoryName' --output table
 
 # 2. Thử nghiệm đăng nhập ECR thủ công bằng CLI
-aws ecr get-login-password --region ap-southeast-1 | docker login --username AWS --password-stdin 798836978890.dkr.ecr.ap-southeast-1.amazonaws.com
+aws ecr get-login-password --region <AWS_REGION> | docker login --username AWS --password-stdin <AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com
 
 # 3. Kiểm tra quyền IAM đính kèm vào role CI
-aws iam get-policy-version --policy-arn arn:aws:iam::798836978890:policy/online-boutique-github-ci --version-id v1
+aws iam get-policy-version --policy-arn arn:aws:iam::<AWS_ACCOUNT_ID>:policy/online-boutique-github-ci --version-id v1
 ```
 
 ##### Trên Windows (PowerShell):
 ```powershell
 # 1. Kiểm tra danh sách 11 ECR repositories hiện có
-aws ecr describe-repositories --region ap-southeast-1 --query 'repositories[*].repositoryName' --output table
+aws ecr describe-repositories --region <AWS_REGION> --query 'repositories[*].repositoryName' --output table
 
 # 2. Thử nghiệm đăng nhập ECR thủ công bằng CLI
-(aws ecr get-login-password --region ap-southeast-1) | docker login --username AWS --password-stdin 798836978890.dkr.ecr.ap-southeast-1.amazonaws.com
+(aws ecr get-login-password --region <AWS_REGION>) | docker login --username AWS --password-stdin <AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com
 
 # 3. Kiểm tra quyền IAM đính kèm vào role CI
-aws iam get-policy-version --policy-arn arn:aws:iam::798836978890:policy/online-boutique-github-ci --version-id v1
+aws iam get-policy-version --policy-arn arn:aws:iam::<AWS_ACCOUNT_ID>:policy/online-boutique-github-ci --version-id v1
 ```
 
 #### Giải pháp:
@@ -821,7 +821,7 @@ Kèm thông tin `Lock Info: ID: <lock-id>, Path: ..., Who: ..., Created: ...`.
 
 #### Nguyên nhân phổ biến:
 1. **Tiến trình Terraform trước đó bị tắt cưỡng bức:** Developer đóng terminal đột ngột hoặc GitHub Actions workflow bị hủy ngang khi Terraform đang ghi dữ liệu vào S3 backend.
-2. **Cơ chế native S3 lock (`use_lockfile = true`) chưa giải phóng:** File `.tflock` vẫn còn tồn tại trên S3 bucket `online-boutique-tfstate-798836978890`.
+2. **Cơ chế native S3 lock (`use_lockfile = true`) chưa giải phóng:** File `.tflock` vẫn còn tồn tại trên S3 bucket `online-boutique-tfstate-<AWS_ACCOUNT_ID>`.
 
 #### Lệnh chẩn đoán:
 
@@ -864,27 +864,27 @@ Chạy `terraform destroy` khi EKS cluster vẫn còn sống nhưng chưa dọn 
 ##### Trên Linux / macOS (Bash):
 ```bash
 # 1. Liệt kê các NLB/ALB còn sót lại trên AWS
-aws elbv2 describe-load-balancers --region ap-southeast-1 --query 'LoadBalancers[*].[LoadBalancerName,LoadBalancerArn]' --output table
+aws elbv2 describe-load-balancers --region <AWS_REGION> --query 'LoadBalancers[*].[LoadBalancerName,LoadBalancerArn]' --output table
 
 # 2. Liệt kê các Classic ELB còn sót lại
-aws elb describe-load-balancers --region ap-southeast-1 --query 'LoadBalancerDescriptions[*].LoadBalancerName' --output table
+aws elb describe-load-balancers --region <AWS_REGION> --query 'LoadBalancerDescriptions[*].LoadBalancerName' --output table
 
 # 3. Liệt kê các Security Groups do Kubernetes tự sinh gắn với VPC
-VPC_ID=$(aws ec2 describe-vpcs --region ap-southeast-1 --filters "Name=tag:Project,Values=online-boutique" --query "Vpcs[0].VpcId" --output text)
-aws ec2 describe-security-groups --region ap-southeast-1 --filters "Name=vpc-id,Values=$VPC_ID" "Name=group-name,Values=k8s-*" --query 'SecurityGroups[*].[GroupId,GroupName]' --output table
+VPC_ID=$(aws ec2 describe-vpcs --region <AWS_REGION> --filters "Name=tag:Project,Values=online-boutique" --query "Vpcs[0].VpcId" --output text)
+aws ec2 describe-security-groups --region <AWS_REGION> --filters "Name=vpc-id,Values=$VPC_ID" "Name=group-name,Values=k8s-*" --query 'SecurityGroups[*].[GroupId,GroupName]' --output table
 ```
 
 ##### Trên Windows (PowerShell):
 ```powershell
 # 1. Liệt kê các NLB/ALB còn sót lại trên AWS
-aws elbv2 describe-load-balancers --region ap-southeast-1 --query 'LoadBalancers[*].[LoadBalancerName,LoadBalancerArn]' --output table
+aws elbv2 describe-load-balancers --region <AWS_REGION> --query 'LoadBalancers[*].[LoadBalancerName,LoadBalancerArn]' --output table
 
 # 2. Liệt kê các Classic ELB còn sót lại
-aws elb describe-load-balancers --region ap-southeast-1 --query 'LoadBalancerDescriptions[*].LoadBalancerName' --output table
+aws elb describe-load-balancers --region <AWS_REGION> --query 'LoadBalancerDescriptions[*].LoadBalancerName' --output table
 
 # 3. Liệt kê các Security Groups do Kubernetes tự sinh gắn với VPC
-$VPC_ID = (aws ec2 describe-vpcs --region ap-southeast-1 --filters "Name=tag:Project,Values=online-boutique" --query "Vpcs[0].VpcId" --output text)
-aws ec2 describe-security-groups --region ap-southeast-1 --filters "Name=vpc-id,Values=$VPC_ID" "Name=group-name,Values=k8s-*" --query 'SecurityGroups[*].[GroupId,GroupName]' --output table
+$VPC_ID = (aws ec2 describe-vpcs --region <AWS_REGION> --filters "Name=tag:Project,Values=online-boutique" --query "Vpcs[0].VpcId" --output text)
+aws ec2 describe-security-groups --region <AWS_REGION> --filters "Name=vpc-id,Values=$VPC_ID" "Name=group-name,Values=k8s-*" --query 'SecurityGroups[*].[GroupId,GroupName]' --output table
 ```
 
 #### Giải pháp:
@@ -895,7 +895,7 @@ Chạy script Python dọn dẹp khẩn cấp để xóa cưỡng bức toàn b�
 python -c "
 import subprocess, json
 
-region = 'ap-southeast-1'
+region = '<AWS_REGION>'
 
 # 1. Xoa NLB/ALB
 try:
@@ -953,7 +953,7 @@ Sau khi chạy xong, thực hiện lại lệnh `terraform destroy -auto-approve
 
 #### Triệu chứng:
 Khi khởi tạo lại hạ tầng buổi sáng bằng `terraform apply`, tiến trình thất bại với lỗi:
-`ResourceAlreadyExistsException: The specified log group already exists: /aws/eks/online-boutique-dev/cluster`.
+`ResourceAlreadyExistsException: The specified log group already exists: /aws/eks/<EKS_CLUSTER_NAME>/cluster`.
 
 #### Nguyên nhân phổ biến:
 Khi EKS cluster kích hoạt tính năng Control Plane Logging (API Server, Audit, Authenticator...), AWS tự động tạo CloudWatch Log Group tương ứng. Mặc định khi EKS cluster bị xóa, AWS giữ lại log group này để bảo toàn dữ liệu nhật ký kiểm toán (Audit Trail) và không tự động xóa theo cluster.
@@ -963,8 +963,8 @@ Khi EKS cluster kích hoạt tính năng Control Plane Logging (API Server, Audi
 ##### Trên Linux / macOS (Bash):
 ```bash
 aws logs describe-log-groups \
-  --log-group-name-prefix /aws/eks/online-boutique-dev \
-  --region ap-southeast-1 \
+  --log-group-name-prefix /aws/eks/<EKS_CLUSTER_NAME> \
+  --region <AWS_REGION> \
   --query 'logGroups[*].[logGroupName,storedBytes]' \
   --output table
 ```
@@ -972,8 +972,8 @@ aws logs describe-log-groups \
 ##### Trên Windows (PowerShell):
 ```powershell
 aws logs describe-log-groups `
-  --log-group-name-prefix /aws/eks/online-boutique-dev `
-  --region ap-southeast-1 `
+  --log-group-name-prefix /aws/eks/<EKS_CLUSTER_NAME> `
+  --region <AWS_REGION> `
   --query 'logGroups[*].[logGroupName,storedBytes]' `
   --output table
 ```
@@ -984,8 +984,8 @@ Xóa Log Group bị kẹt trực tiếp bằng AWS CLI trước khi chạy lại
 ##### Trên Linux / macOS (Bash) & Windows (PowerShell):
 ```bash
 aws logs delete-log-group \
-  --log-group-name /aws/eks/online-boutique-dev/cluster \
-  --region ap-southeast-1
+  --log-group-name /aws/eks/<EKS_CLUSTER_NAME>/cluster \
+  --region <AWS_REGION>
 ```
 
 Sau khi xóa, chạy lại:

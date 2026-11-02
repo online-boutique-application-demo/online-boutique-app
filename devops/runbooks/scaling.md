@@ -1,7 +1,7 @@
 # 📈 Runbook: Hướng Dẫn Co Giãn Tài Nguyên (Scaling Guide)
 
 > **Dành cho:** Kỹ sư Vận hành (SRE) / DevOps Engineer phụ trách hệ thống Online Boutique trên AWS EKS.  
-> **Phạm vi áp dụng:** Cụm EKS `online-boutique-dev` (v1.36), khu vực `ap-southeast-1`, tài khoản AWS `798836978890`.  
+> **Phạm vi áp dụng:** Cụm EKS `<EKS_CLUSTER_NAME>` (v1.36), khu vực `<AWS_REGION>`, tài khoản AWS `<AWS_ACCOUNT_ID>`.  
 > **Mục tiêu:** Hướng dẫn quy trình co giãn tự động và thủ công ở cả 2 tầng: **Pod (HPA)** và **Node (Cluster Autoscaler)**, kết hợp tối ưu chi phí trên nền tảng **EC2 Spot Instances**.
 
 ---
@@ -171,7 +171,7 @@ kubectl describe hpa frontend-hpa -n online-boutique
 ## 2. Quản Trị Cluster Autoscaler
 
 ### 2.1 Cấu Hình Hiện Tại Cụm EKS Dev
-Cụm `online-boutique-dev` sử dụng AWS Managed Node Group với loại máy ảo **EC2 Spot `t3.medium`** (2 vCPU, 4 GiB Memory mỗi node).
+Cụm `<EKS_CLUSTER_NAME>` sử dụng AWS Managed Node Group với loại máy ảo **EC2 Spot `t3.medium`** (2 vCPU, 4 GiB Memory mỗi node).
 
 - **`node_min_size`:** `2` nodes (Mức sàn tiết kiệm chi phí ngoài giờ).
 - **`node_desired_size`:** `3` nodes (Mức thông thường đảm bảo chạy 11 microservices + Istio).
@@ -185,7 +185,7 @@ Cụm `online-boutique-dev` sử dụng AWS Managed Node Group với loại máy
 ### 2.2 Cơ Chế Tự Động Phát Hiện Qua AWS ASG Tags
 Cluster Autoscaler tự động nhận biết Auto Scaling Group nào thuộc quyền quản lý của nó thông qua 2 thẻ (tags) được Terraform tự động gán vào ASG:
 1. `k8s.io/cluster-autoscaler/enabled = true`
-2. `k8s.io/cluster-autoscaler/online-boutique-dev = owned`
+2. `k8s.io/cluster-autoscaler/<EKS_CLUSTER_NAME> = owned`
 
 Khi có Pod rơi vào trạng thái `Pending` với sự kiện `FailedScheduling` (Insufficient cpu / Insufficient memory), Cluster Autoscaler tính toán số lượng node cần thiết và gọi API của AWS EC2 Auto Scaling để tăng `DesiredCapacity`.
 
@@ -219,7 +219,7 @@ terraform apply -target=module.eks -auto-approve
 
 ##### Trên Windows (PowerShell):
 ```powershell
-Set-Location -Path "d:\online-boutique\online-boutique-app\terraform-aws\environments\dev"
+Set-Location -Path "<PROJECT_ROOT>\online-boutique-app\terraform-aws\environments\dev"
 
 # 1. Khởi tạo và kiểm tra kế hoạch thay đổi
 terraform plan -target=module.eks

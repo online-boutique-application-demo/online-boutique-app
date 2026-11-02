@@ -195,7 +195,7 @@ variable "aws_region" {
 variable "github_org" {
   description = "GitHub organization or user name"
   type        = string
-  default     = "online-boutique-application-demo"
+  default     = "<YOUR_GITHUB_ORG>"
 }
 
 variable "github_repo_app" {

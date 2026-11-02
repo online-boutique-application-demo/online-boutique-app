@@ -33,7 +33,7 @@ Mở PowerShell (hoặc Bash) tại thư mục `online-boutique-config` và ch�
 
 #### Trên Windows (PowerShell):
 ```powershell
-Set-Location -Path "d:\online-boutique\online-boutique-config"
+Set-Location -Path "<PROJECT_ROOT>\online-boutique-config"
 
 # 1. Dọn dẹp Monitoring Stack (Stage 5) - Xóa Helm releases & giải phóng EBS Volumes
 helm uninstall kube-prometheus-stack loki-stack tempo otel-collector -n monitoring 2>$null
@@ -57,7 +57,7 @@ kubectl delete namespace argocd --timeout=60s
 
 #### Trên Linux / macOS (Bash):
 ```bash
-cd /path/to/online-boutique-config
+cd <PROJECT_ROOT>/online-boutique-config
 
 # 1. Dọn dẹp Monitoring Stack (Stage 5)
 helm uninstall kube-prometheus-stack loki-stack tempo otel-collector -n monitoring 2>/dev/null || true
@@ -82,8 +82,8 @@ kubectl delete namespace argocd --timeout=60s || true
 
 #### Kiểm tra xác nhận các Load Balancer đã được thu hồi sạch sẽ:
 ```powershell
-aws elbv2 describe-load-balancers --region ap-southeast-1 --query "LoadBalancers[*].LoadBalancerName"
-aws elb describe-load-balancers --region ap-southeast-1 --query "LoadBalancerDescriptions[*].LoadBalancerName"
+aws elbv2 describe-load-balancers --region <AWS_REGION> --query "LoadBalancers[*].LoadBalancerName"
+aws elb describe-load-balancers --region <AWS_REGION> --query "LoadBalancerDescriptions[*].LoadBalancerName"
 ```
 *(Cả 2 lệnh trên trả về `[]` nghĩa là các ELB/NLB và ENI đã được AWS giải phóng hoàn toàn).*
 
@@ -94,7 +94,7 @@ aws elb describe-load-balancers --region ap-southeast-1 --query "LoadBalancerDes
 Chuyển vào thư mục môi trường dev và chạy lệnh destroy:
 
 ```powershell
-cd d:\online-boutique\online-boutique-app\terraform-aws\environments\dev
+cd <PROJECT_ROOT>\online-boutique-app\terraform-aws\environments\dev
 terraform destroy -auto-approve
 ```
 
@@ -110,7 +110,7 @@ Nếu bạn đã lỡ bấm `terraform destroy` trước khi dọn dẹp K8s Ser
 python -c "
 import subprocess, json
 
-region = 'ap-southeast-1'
+region = '<AWS_REGION>'
 
 # 1. Xóa tất cả NLB/ALB còn sót
 try:
@@ -169,11 +169,11 @@ Vào đầu ngày mới khi bắt đầu làm việc, thực hiện tuần tự 
 
 ```powershell
 # 1. Chạy Terraform Apply
-cd d:\online-boutique\online-boutique-app\terraform-aws\environments\dev
+cd <PROJECT_ROOT>\online-boutique-app\terraform-aws\environments\dev
 terraform apply -auto-approve
 
 # 2. Cập nhật Kubeconfig để kubectl kết nối tới EKS Cluster mới
-aws eks update-kubeconfig --region ap-southeast-1 --name online-boutique-dev
+aws eks update-kubeconfig --region <AWS_REGION> --name <EKS_CLUSTER_NAME>
 ```
 *(Quá trình mất khoảng 10–12 phút để dựng mới VPC, EKS Spot Nodes và ElastiCache Redis).*
 
@@ -182,7 +182,7 @@ aws eks update-kubeconfig --region ap-southeast-1 --name online-boutique-dev
 ### 4.2 Cài Đặt ArgoCD & Core Controllers (Stage 3)
 
 ```powershell
-cd d:\online-boutique\online-boutique-config
+cd <PROJECT_ROOT>\online-boutique-config
 
 # 1. Cài đặt ArgoCD Controller
 helm install argocd argo/argo-cd `
@@ -209,7 +209,7 @@ kubectl wait --for=condition=available deployment/cluster-autoscaler-aws-cluster
 ### 4.3 Khởi Tạo Istio Service Mesh & Kiali (Stage 4)
 
 ```powershell
-cd d:\online-boutique\online-boutique-config
+cd <PROJECT_ROOT>\online-boutique-config
 
 # 1. Cài đặt Istio core control plane và Ingress Gateway
 istioctl install --set profile=default -y
@@ -249,7 +249,7 @@ Có 2 phương án để triển khai lại stack giám sát:
 #### Phương Án A: Tự Động Hoàn Toàn Bằng ArgoCD GitOps (Khuyên Dùng)
 
 ```powershell
-cd d:\online-boutique\online-boutique-config
+cd <PROJECT_ROOT>\online-boutique-config
 
 # Áp dụng toàn bộ ArgoCD Applications (các app đã tồn tại từ Stage 3, 4 sẽ báo unchanged)
 kubectl apply -f argocd/apps/dev/
@@ -261,7 +261,7 @@ kubectl apply -f argocd/apps/dev/
 #### Phương Án B: Cài Đặt Trực Tiếp Bằng Helm CLI (Khi Cần Dựng Nhanh)
 
 ```powershell
-cd d:\online-boutique\online-boutique-config
+cd <PROJECT_ROOT>\online-boutique-config
 
 # 1. Cập nhật Helm repositories
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts

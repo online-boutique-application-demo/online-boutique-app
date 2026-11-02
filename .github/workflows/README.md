@@ -1,6 +1,6 @@
 # GitHub Actions Workflows
 
-Trang này mô tả các CI/CD workflows cho Online Boutique trên AWS, chạy trên [GitHub Actions](https://github.com/online-boutique-application-demo/online-boutique-app/actions).
+Trang này mô tả các CI/CD workflows cho Online Boutique trên AWS, chạy trên [GitHub Actions](https://github.com/<GITHUB_ORG>/online-boutique-app/actions).
 
 ## Infrastructure
 

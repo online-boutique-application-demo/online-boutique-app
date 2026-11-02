@@ -2,10 +2,10 @@
 # for more info about CODEOWNERS file.
 
 # Default owners for everything in the repo
-* @online-boutique-application-demo/maintainers
+* @<YOUR_GITHUB_ORG>/maintainers
 
 # Infrastructure (Terraform)
-terraform-aws/ @online-boutique-application-demo/maintainers
+terraform-aws/ @<YOUR_GITHUB_ORG>/maintainers
 
 # CI/CD Workflows
-.github/ @online-boutique-application-demo/maintainers
+.github/ @<YOUR_GITHUB_ORG>/maintainers

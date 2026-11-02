@@ -22,8 +22,8 @@ node_max_size       = 5
 
 # EKS Cluster Admin Access (IAM ARNs – both human users and CI roles)
 cluster_admin_arns = [
-  "arn:aws:iam::798836978890:user/minhhuy",
-  "arn:aws:iam::798836978890:role/online-boutique-github-terraform",
+  "arn:aws:iam::<YOUR_AWS_ACCOUNT_ID>:user/<YOUR_IAM_USERNAME>",
+  "arn:aws:iam::<YOUR_AWS_ACCOUNT_ID>:role/online-boutique-github-terraform",
 ]
 
 # ElastiCache
