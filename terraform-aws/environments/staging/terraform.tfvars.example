@@ -22,9 +22,10 @@ node_min_size       = 2
 node_max_size       = 5
 
 # EKS Cluster Admin Access (IAM ARNs – both human users and CI roles)
+# Note: In CI workflows, aws_region and cluster_admin_arns are overridden via CLI flags (-var).
 cluster_admin_arns = [
-  "arn:aws:iam::<YOUR_AWS_ACCOUNT_ID>:user/<YOUR_IAM_USERNAME>",
-  "arn:aws:iam::<YOUR_AWS_ACCOUNT_ID>:role/online-boutique-github-terraform",
+  "arn:aws:iam::<AWS_ACCOUNT_ID>:user/<IAM_USERNAME>",
+  "arn:aws:iam::<AWS_ACCOUNT_ID>:role/online-boutique-github-terraform",
 ]
 
 # ElastiCache

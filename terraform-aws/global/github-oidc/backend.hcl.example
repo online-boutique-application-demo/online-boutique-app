@@ -1,0 +1,2 @@
+bucket = "online-boutique-tfstate-<AWS_ACCOUNT_ID>"
+region = "<AWS_REGION>"

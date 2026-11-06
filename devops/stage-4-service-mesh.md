@@ -90,7 +90,7 @@ graph TD
   - Phép ngoại lệ cho `loadgenerator` (gửi request kiểm thử HTTP vào `frontend`).
 
 ### 3.3 Đảm Bảo Kết Nối Ra ElastiCache Redis Ngoài Mesh
-- `cartservice` kết nối với AWS ElastiCache Redis tại endpoint `online-boutique-dev.e9wc6a.ng.0001.apse1.cache.amazonaws.com:6379`.
+- `cartservice` kết nối với AWS ElastiCache Redis tại endpoint `<REDIS_ENDPOINT>:6379`.
 - Istio mặc định sử dụng `meshConfig.outboundTrafficPolicy.mode = ALLOW_ANY`, cho phép Envoy sidecar pass-through trực tiếp các kết nối ra ngoài cụm.
 - `DestinationRule` áp dụng scope `*.online-boutique.svc.cluster.local`, do đó không can thiệp hay ép mTLS lên endpoint ElastiCache của AWS.
 

@@ -6,6 +6,24 @@
 
 ---
 
+### Thiết lập biến môi trường (Environment Variables)
+
+Trước khi thực thi các lệnh bên dưới, hãy thiết lập các biến môi trường tương ứng với phiên terminal của bạn:
+
+##### Linux / macOS (Bash):
+```bash
+export AWS_ACCOUNT_ID=<AWS_ACCOUNT_ID>
+export AWS_REGION=<AWS_REGION>
+export EKS_CLUSTER_NAME=online-boutique-dev
+```
+
+##### Windows (PowerShell):
+```powershell
+$env:AWS_ACCOUNT_ID = "<AWS_ACCOUNT_ID>"; $env:AWS_REGION = "<AWS_REGION>"; $env:EKS_CLUSTER_NAME = "online-boutique-dev"
+```
+
+---
+
 ## 1. Thông Tin Môi Trường & Kiến Trúc Triển Khai
 
 ### 1.1 Thông Số Cố Định (Fixed Parameters)
@@ -17,8 +35,8 @@
 | **EKS Cluster Name** | `<EKS_CLUSTER_NAME>` | Kubernetes v1.36 Spot Instances |
 | **ECR Registry URI** | `<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/online-boutique/<service>:<tag>` | Tag format: `sha-<commit_short>` |
 | **App Source Repo** | `<GITHUB_ORG>/online-boutique-app` | Chứa mã nguồn, Terraform, CI workflows |
-| **GitOps Config Repo** | `<GITHUB_ORG>/online-boutique-config` | Chứa manifests K8s, Kustomize overlays, ArgoCD Apps |
-| **S3 Terraform State** | `online-boutique-tfstate-<AWS_ACCOUNT_ID>` | State lock qua AWS DynamoDB |
+| **GitOps Config Repo** | `<GITHUB_ORG>/online-boutique-config` | Chứa manifests K8s, Kustomize overlays, ArgoCD Apps (ArgoCD theo dõi nhánh `deploy/dev` cho cụm live dev cluster; template trên `main`, giá trị cấu hình thực tế trong `overlays/dev/env.properties` trên `deploy/dev`) |
+| **S3 Terraform State** | `online-boutique-tfstate-<AWS_ACCOUNT_ID>` | State lock native trên S3 (`use_lockfile = true`, Terraform >= 1.10) |
 
 ### 1.2 Kiến Trúc Luồng Triển Khai End-to-End
 
@@ -105,8 +123,7 @@ sequenceDiagram
 
 ##### Linux / macOS (Bash):
 ```bash
-# 1. Chuyển vào thư mục repo ứng dụng
-cd <PROJECT_ROOT>/online-boutique-app
+# 1. Chạy từ thư mục gốc của repo online-boutique-app
 
 # 2. Đồng bộ nhánh main mới nhất
 git checkout main
@@ -125,8 +142,7 @@ git push -u origin feature/cartservice-redis-retry
 
 ##### Windows (PowerShell):
 ```powershell
-# 1. Chuyển vào thư mục repo ứng dụng
-Set-Location -Path "<PROJECT_ROOT>\online-boutique-app"
+# 1. Chạy từ thư mục gốc của repo online-boutique-app
 
 # 2. Đồng bộ nhánh main mới nhất
 git checkout main
@@ -167,7 +183,7 @@ Sau khi merge vào `main`, workflow `.github/workflows/ci-main.yml` tự động
   - Đăng nhập AWS ECR thông qua GitHub OIDC (Role ARN không lưu hardcode credential).
   - Ký số container image bằng **Cosign** (Keyless signing qua Sigstore Rekor tlog).
   - Push image lên ECR: `<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/online-boutique/cartservice:sha-<commit_short>`.
-  - Composite action `update-manifests` commit tag mới vào file `overlays/dev/kustomization.yaml` trên repo `online-boutique-config`.
+  - Composite action `update-manifests` commit tag mới vào repo `online-boutique-config` (lưu ý: ArgoCD theo dõi nhánh `deploy/dev` cho cụm live dev cluster, trong khi template gốc nằm trên `main` và giá trị thực tế nằm trong `overlays/dev/env.properties` trên nhánh `deploy/dev`).
 
 ##### Lệnh theo dõi trạng thái CI qua GitHub CLI:
 
@@ -250,7 +266,8 @@ Trước khi tạo PR, kỹ sư phải chạy validate và format để đảm b
 
 ##### Linux / macOS (Bash):
 ```bash
-cd <PROJECT_ROOT>/online-boutique-app/terraform-aws/environments/dev
+# Chạy từ thư mục gốc của repo online-boutique-app
+cd terraform-aws/environments/dev
 
 # 1. Kiểm tra format
 terraform fmt -check -recursive ../..
@@ -262,7 +279,8 @@ terraform validate
 
 ##### Windows (PowerShell):
 ```powershell
-Set-Location -Path "<PROJECT_ROOT>\online-boutique-app\terraform-aws\environments\dev"
+# Chạy từ thư mục gốc của repo online-boutique-app
+Set-Location -Path "terraform-aws\environments\dev"
 
 # 1. Kiểm tra format
 terraform fmt -check -recursive ../..
@@ -324,7 +342,8 @@ flowchart TD
 
 ##### Linux / macOS (Bash):
 ```bash
-cd <PROJECT_ROOT>/online-boutique-app/terraform-aws/environments/dev
+# Chạy từ thư mục gốc của repo online-boutique-app
+cd terraform-aws/environments/dev
 
 # Khởi tạo và apply hạ tầng (~10–12 phút)
 terraform init
@@ -336,7 +355,8 @@ terraform output
 
 ##### Windows (PowerShell):
 ```powershell
-Set-Location -Path "<PROJECT_ROOT>\online-boutique-app\terraform-aws\environments\dev"
+# Chạy từ thư mục gốc của repo online-boutique-app
+Set-Location -Path "terraform-aws\environments\dev"
 
 # Khởi tạo và apply hạ tầng (~10–12 phút)
 terraform init
@@ -353,7 +373,7 @@ terraform output
 ##### Linux / macOS (Bash):
 ```bash
 # Cập nhật kubeconfig với AWS CLI
-aws eks update-kubeconfig --region <AWS_REGION> --name <EKS_CLUSTER_NAME>
+aws eks update-kubeconfig --region $AWS_REGION --name $EKS_CLUSTER_NAME
 
 # Xác nhận kết nối tới cụm
 kubectl get nodes -o wide
@@ -362,7 +382,7 @@ kubectl get nodes -o wide
 ##### Windows (PowerShell):
 ```powershell
 # Cập nhật kubeconfig với AWS CLI
-aws eks update-kubeconfig --region <AWS_REGION> --name <EKS_CLUSTER_NAME>
+aws eks update-kubeconfig --region $env:AWS_REGION --name $env:EKS_CLUSTER_NAME
 
 # Xác nhận kết nối tới cụm
 kubectl get nodes -o wide
@@ -374,7 +394,8 @@ kubectl get nodes -o wide
 
 ##### Linux / macOS (Bash):
 ```bash
-cd <PROJECT_ROOT>/online-boutique-config
+# Chuyển sang thư mục gốc của repo online-boutique-config
+cd ../online-boutique-config
 
 # 1. Cài đặt ArgoCD Controller bằng Helm
 helm install argocd argo/argo-cd \
@@ -394,7 +415,8 @@ kubectl wait --for=condition=available deployment/cluster-autoscaler-aws-cluster
 
 ##### Windows (PowerShell):
 ```powershell
-Set-Location -Path "<PROJECT_ROOT>\online-boutique-config"
+# Chuyển sang thư mục gốc của repo online-boutique-config
+Set-Location -Path "..\online-boutique-config"
 
 # 1. Cài đặt ArgoCD Controller bằng Helm
 helm install argocd argo/argo-cd `
@@ -418,7 +440,8 @@ kubectl wait --for=condition=available deployment/cluster-autoscaler-aws-cluster
 
 ##### Linux / macOS (Bash):
 ```bash
-cd <PROJECT_ROOT>/online-boutique-config
+# Chạy từ thư mục gốc của repo online-boutique-config
+cd ../online-boutique-config
 
 # 1. Cài đặt Istio core profile=default
 istioctl install --set profile=default -y
@@ -447,7 +470,8 @@ kubectl wait --for=condition=available deployment --all -n online-boutique --tim
 
 ##### Windows (PowerShell):
 ```powershell
-Set-Location -Path "<PROJECT_ROOT>\online-boutique-config"
+# Chạy từ thư mục gốc của repo online-boutique-config
+Set-Location -Path "..\online-boutique-config"
 
 # 1. Cài đặt Istio core profile=default
 istioctl install --set profile=default -y
@@ -482,7 +506,8 @@ kubectl wait --for=condition=available deployment --all -n online-boutique --tim
 
 ##### Linux / macOS (Bash):
 ```bash
-cd <PROJECT_ROOT>/online-boutique-config
+# Chạy từ thư mục gốc của repo online-boutique-config
+cd ../online-boutique-config
 
 # Áp dụng tất cả các App manifests (ArgoCD tự động kích hoạt 5 apps monitoring)
 kubectl apply -f argocd/apps/dev/
@@ -493,7 +518,8 @@ kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=prometheus -n m
 
 ##### Windows (PowerShell):
 ```powershell
-Set-Location -Path "<PROJECT_ROOT>\online-boutique-config"
+# Chạy từ thư mục gốc của repo online-boutique-config
+Set-Location -Path "..\online-boutique-config"
 
 # Áp dụng tất cả các App manifests (ArgoCD tự động kích hoạt 5 apps monitoring)
 kubectl apply -f argocd/apps/dev/
@@ -537,15 +563,16 @@ kubectl rollout status deployment/frontend -n online-boutique --timeout=120s
 
 ##### Linux / macOS (Bash):
 ```bash
-cd <PROJECT_ROOT>/online-boutique-config
+# Chuyển sang thư mục gốc của repo online-boutique-config
+cd ../online-boutique-config
 
 # BƯỚC 1: Dọn dẹp K8s resources & Load Balancers khi EKS còn sống
-helm uninstall kube-prometheus-stack loki-stack tempo otel-collector -n monitoring 2>/dev/null || true
+kubectl delete application kube-prometheus-stack loki-stack tempo otel-collector monitoring-stack-dev -n argocd --timeout=60s 2>/dev/null || true
 kubectl delete pvc --all -n monitoring --timeout=60s || true
 kubectl delete namespace monitoring --timeout=60s || true
 
 helm uninstall kiali-server -n istio-system 2>/dev/null || true
-kubectl delete application online-boutique-dev istio-config -n argocd --timeout=60s 2>/dev/null || true
+kubectl delete application online-boutique-dev istio-config-dev -n argocd --timeout=60s 2>/dev/null || true
 kubectl delete namespace online-boutique --timeout=90s || true
 
 istioctl uninstall --purge -y || true
@@ -556,25 +583,26 @@ helm uninstall argocd -n argocd 2>/dev/null || true
 kubectl delete namespace argocd --timeout=60s || true
 
 # Xác nhận Load Balancers đã giải phóng sạch
-aws elbv2 describe-load-balancers --region <AWS_REGION> --query "LoadBalancers[*].LoadBalancerName"
-aws elb describe-load-balancers --region <AWS_REGION> --query "LoadBalancerDescriptions[*].LoadBalancerName"
+aws elbv2 describe-load-balancers --region $AWS_REGION --query "LoadBalancers[*].LoadBalancerName"
+aws elb describe-load-balancers --region $AWS_REGION --query "LoadBalancerDescriptions[*].LoadBalancerName"
 
-# BƯỚC 2: Chạy Terraform Destroy
-cd <PROJECT_ROOT>/online-boutique-app/terraform-aws/environments/dev
+# BƯỚC 2: Chạy Terraform Destroy (từ thư mục gốc của repo online-boutique-app)
+cd terraform-aws/environments/dev
 terraform destroy -auto-approve
 ```
 
 ##### Windows (PowerShell):
 ```powershell
-Set-Location -Path "<PROJECT_ROOT>\online-boutique-config"
+# Chuyển sang thư mục gốc của repo online-boutique-config
+Set-Location -Path "..\online-boutique-config"
 
 # BƯỚC 1: Dọn dẹp K8s resources & Load Balancers khi EKS còn sống
-helm uninstall kube-prometheus-stack loki-stack tempo otel-collector -n monitoring 2>$null
+kubectl delete application kube-prometheus-stack loki-stack tempo otel-collector monitoring-stack-dev -n argocd --timeout=60s 2>$null
 kubectl delete pvc --all -n monitoring --timeout=60s
 kubectl delete namespace monitoring --timeout=60s
 
 helm uninstall kiali-server -n istio-system 2>$null
-kubectl delete application online-boutique-dev istio-config -n argocd --timeout=60s 2>$null
+kubectl delete application online-boutique-dev istio-config-dev -n argocd --timeout=60s 2>$null
 kubectl delete namespace online-boutique --timeout=90s
 
 istioctl uninstall --purge -y
@@ -585,11 +613,11 @@ helm uninstall argocd -n argocd 2>$null
 kubectl delete namespace argocd --timeout=60s
 
 # Xác nhận Load Balancers đã giải phóng sạch (Kỳ vọng trả về [])
-aws elbv2 describe-load-balancers --region <AWS_REGION> --query "LoadBalancers[*].LoadBalancerName"
-aws elb describe-load-balancers --region <AWS_REGION> --query "LoadBalancerDescriptions[*].LoadBalancerName"
+aws elbv2 describe-load-balancers --region $env:AWS_REGION --query "LoadBalancers[*].LoadBalancerName"
+aws elb describe-load-balancers --region $env:AWS_REGION --query "LoadBalancerDescriptions[*].LoadBalancerName"
 
-# BƯỚC 2: Chạy Terraform Destroy
-Set-Location -Path "<PROJECT_ROOT>\online-boutique-app\terraform-aws\environments\dev"
+# BƯỚC 2: Chạy Terraform Destroy (từ thư mục gốc của repo online-boutique-app)
+Set-Location -Path "terraform-aws\environments\dev"
 terraform destroy -auto-approve
 ```
 
@@ -666,7 +694,7 @@ kubectl get pods -n online-boutique -o wide --sort-by='.spec.nodeName'
 | :--- | :--- | :--- | :--- |
 | **Online Boutique** | *(Không cần port-forward)* | `http://<NLB-DNS>` | Cổng 80 qua AWS Network Load Balancer |
 | **ArgoCD UI** | `kubectl port-forward -n argocd svc/argocd-server 8080:443` | `https://localhost:8080` | `admin` / Lấy pass: `kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" \| base64 -d` |
-| **Grafana** | `kubectl port-forward -n monitoring svc/grafana 3000:80` | `http://localhost:3000` | `admin` / `admin` (Dashboards, Logs, Traces) |
+| **Grafana** | `kubectl port-forward -n monitoring svc/grafana 3000:80` | `http://localhost:3000` | `admin` / Lấy pass: `kubectl get secret grafana-admin -n monitoring -o jsonpath="{.data.admin-password}" \| base64 -d` |
 | **Prometheus** | `kubectl port-forward -n monitoring svc/prometheus-server 9090:80` | `http://localhost:9090` | Xem targets, PromQL metrics |
 | **Alertmanager** | `kubectl port-forward -n monitoring svc/alertmanager 9093:9093` | `http://localhost:9093` | Quản lý silences, alert notifications |
 | **Kiali** | `kubectl port-forward -n istio-system svc/kiali 20001:20001` | `http://localhost:20001/kiali` | Đăng nhập ẩn danh (Service Mesh Topology) |

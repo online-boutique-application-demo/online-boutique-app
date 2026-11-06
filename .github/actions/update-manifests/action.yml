@@ -23,6 +23,10 @@ inputs:
   config_repo_token:
     description: "GitHub PAT or App token with write access to config repo"
     required: true
+  config_repo_branch:
+    description: "Target branch in config repo"
+    required: false
+    default: "main"
 
 runs:
   using: "composite"
@@ -40,6 +44,7 @@ runs:
       with:
         repository: ${{ inputs.config_repo }}
         token: ${{ inputs.config_repo_token }}
+        ref: ${{ inputs.config_repo_branch }}
         path: _config_repo
 
     - name: Install yq
@@ -59,7 +64,7 @@ runs:
         DEV_KUSTOMIZATION="$CONFIG_DIR/overlays/dev/kustomization.yaml"
         if [[ -f "$DEV_KUSTOMIZATION" ]]; then
           yq e "
-            (.images[] | select(.name == \"*/$SERVICE\") | .newTag) = \"$NEW_TAG\"
+            (.images[] | select(.name == \"*/online-boutique/$SERVICE\") | .newTag) = \"$NEW_TAG\"
           " -i "$DEV_KUSTOMIZATION"
           echo "✅ Updated $DEV_KUSTOMIZATION"
         else
@@ -68,6 +73,10 @@ runs:
 
     - name: Commit and push changes (with retry for concurrent pushes)
       shell: bash
+      env:
+        BRANCH: ${{ inputs.config_repo_branch }}
+        SERVICE: ${{ inputs.service }}
+        IMAGE_TAG: ${{ inputs.image_tag }}
       run: |
         cd _config_repo
         git config user.name "GitHub Actions Bot"
@@ -79,7 +88,7 @@ runs:
           exit 0
         fi
 
-        git commit -m "chore(cd): update ${{ inputs.service }} to ${{ inputs.image_tag }}
+        git commit -m "chore(cd): update $SERVICE to $IMAGE_TAG
 
           Source: ${{ github.repository }}@${{ github.sha }}
           Workflow: ${{ github.workflow }} #${{ github.run_number }}"
@@ -89,14 +98,14 @@ runs:
         # We retry with git pull --rebase to incorporate the other changes.
         MAX_RETRIES=5
         for i in $(seq 1 $MAX_RETRIES); do
-          if git push; then
-            echo "✅ Pushed manifest update for ${{ inputs.service }} (attempt $i)"
+          if git push origin HEAD:"$BRANCH"; then
+            echo "✅ Pushed manifest update for $SERVICE (attempt $i)"
             exit 0
           fi
 
           echo "⚠️  Push failed (attempt $i/$MAX_RETRIES) – pulling latest and retrying..."
           sleep $((i * 2))  # Exponential-ish backoff: 2s, 4s, 6s, 8s, 10s
-          git pull --rebase
+          git pull --rebase origin "$BRANCH"
         done
 
         echo "::error::Failed to push after $MAX_RETRIES attempts"

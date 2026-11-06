@@ -102,13 +102,21 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.any_service == 'true'
     runs-on: ubuntu-latest
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     steps:
+      - name: Check SonarCloud Token
+        if: env.SONAR_TOKEN == ''
+        run: echo "::notice::SONAR_TOKEN not set – skipping SonarCloud"
+
       - name: Checkout code
+        if: env.SONAR_TOKEN != ''
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: SonarCloud Scan
+        if: env.SONAR_TOKEN != ''
         uses: SonarSource/sonarqube-scan-action@v5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

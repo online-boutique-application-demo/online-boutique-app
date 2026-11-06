@@ -1,4 +1,4 @@
-# TODO: Replace bucket name with your own. Format: online-boutique-tfstate-<YOUR_AWS_ACCOUNT_ID>
+# TODO: Replace bucket name with your own. Format: online-boutique-tfstate-<AWS_ACCOUNT_ID>
 # TODO: Replace region with your AWS region
 # =============================================================================
 # S3 Backend Configuration for s3-backend module
@@ -11,9 +11,9 @@
 
 terraform {
   backend "s3" {
-    bucket       = "online-boutique-tfstate-<YOUR_AWS_ACCOUNT_ID>"
+    bucket       = "online-boutique-tfstate-<AWS_ACCOUNT_ID>"
     key          = "global/s3-backend/terraform.tfstate"
-    region       = "ap-southeast-1"
+    region       = "<AWS_REGION>"
     encrypt      = true
     use_lockfile = true
   }

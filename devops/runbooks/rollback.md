@@ -6,6 +6,24 @@
 
 ---
 
+### Thiết lập biến môi trường (Environment Variables)
+
+Trước khi thực thi các lệnh bên dưới, hãy thiết lập các biến môi trường tương ứng với phiên terminal của bạn:
+
+##### Linux / macOS (Bash):
+```bash
+export AWS_ACCOUNT_ID=<AWS_ACCOUNT_ID>
+export AWS_REGION=<AWS_REGION>
+export EKS_CLUSTER_NAME=online-boutique-dev
+```
+
+##### Windows (PowerShell):
+```powershell
+$env:AWS_ACCOUNT_ID = "<AWS_ACCOUNT_ID>"; $env:AWS_REGION = "<AWS_REGION>"; $env:EKS_CLUSTER_NAME = "online-boutique-dev"
+```
+
+---
+
 ## 1. Tổng Quan & Ma Trận Quyết Định Hoàn Nguyên (Decision Matrix)
 
 Trong môi trường triển khai hiện đại kết hợp **GitOps (ArgoCD)** và **Infrastructure as Code (Terraform)**, việc rollback không chỉ đơn thuần là quay lại phiên bản container cũ, mà phải đảm bảo tính nhất quán (consistency) giữa trạng thái khai báo trong kho lưu trữ Git (Single Source of Truth) và trạng thái hoạt động thực tế trên cụm Kubernetes.
@@ -65,7 +83,7 @@ sequenceDiagram
     participant Argo as ArgoCD Controller
     participant K8s as Kubernetes Cluster
 
-    DevOps->>CfgRepo: git revert HEAD & git push origin main
+    DevOps->>CfgRepo: git revert HEAD & git push origin deploy/dev
     CfgRepo-->>Argo: Phát hiện commit mới (Git Drift Detection)
     Note over Argo: ArgoCD nhận diện Image Tag quay về bản trước
     Argo->>K8s: Thực hiện Rolling Update Pods về image tag ổn định
@@ -79,9 +97,12 @@ sequenceDiagram
 
 ##### Linux / macOS (Bash):
 ```bash
-cd <PROJECT_ROOT>/online-boutique-config
-git checkout main
-git pull origin main
+# Chuyển sang thư mục gốc của repo online-boutique-config
+cd ../online-boutique-config
+
+# ArgoCD theo dõi nhánh deploy/dev cho cụm live dev cluster (template trên main, giá trị thực tế trong overlays/dev/env.properties trên deploy/dev)
+git checkout deploy/dev
+git pull origin deploy/dev
 
 # Xem 5 commit gần nhất để xác định commit vừa triển khai bị lỗi
 git log --oneline -n 5
@@ -89,9 +110,12 @@ git log --oneline -n 5
 
 ##### Windows (PowerShell):
 ```powershell
-Set-Location -Path "<PROJECT_ROOT>\online-boutique-config"
-git checkout main
-git pull origin main
+# Chuyển sang thư mục gốc của repo online-boutique-config
+Set-Location -Path "..\online-boutique-config"
+
+# ArgoCD theo dõi nhánh deploy/dev cho cụm live dev cluster (template trên main, giá trị thực tế trong overlays/dev/env.properties trên deploy/dev)
+git checkout deploy/dev
+git pull origin deploy/dev
 
 # Xem 5 commit gần nhất để xác định commit vừa triển khai bị lỗi
 git log --oneline -n 5
@@ -109,8 +133,8 @@ git revert HEAD --no-edit
 # Trường hợp 2: Nếu cần revert một commit cụ thể
 # git revert <commit-sha> --no-edit
 
-# Đẩy commit hoàn nguyên lên nhánh main
-git push origin main
+# Đẩy commit hoàn nguyên lên nhánh deploy/dev
+git push origin deploy/dev
 ```
 
 ##### Windows (PowerShell):
@@ -121,8 +145,8 @@ git revert HEAD --no-edit
 # Trường hợp 2: Nếu cần revert một commit cụ thể
 # git revert <commit-sha> --no-edit
 
-# Đẩy commit hoàn nguyên lên nhánh main
-git push origin main
+# Đẩy commit hoàn nguyên lên nhánh deploy/dev
+git push origin deploy/dev
 ```
 
 ---
@@ -276,8 +300,14 @@ kubectl patch application online-boutique-dev -n argocd --type merge -p '{"spec"
 # Cách 1: Qua ArgoCD CLI (khuyên dùng nếu đã login)
 argocd app set online-boutique-dev --sync-policy manual
 
-# Cách 2: Qua kubectl patch trực tiếp vào CRD Application (không cần đăng nhập ArgoCD CLI)
-kubectl patch application online-boutique-dev -n argocd --type merge -p '{"spec":{"syncPolicy":null}}'
+# Cách 2: Qua kubectl patch trực tiếp vào CRD Application (PowerShell-safe)
+# Phương án A: Dùng escaped quotes
+kubectl patch application online-boutique-dev -n argocd --type merge -p '{\"spec\":{\"syncPolicy\":null}}'
+
+# Phương án B: Dùng tệp JSON tạm với --patch-file (tránh lỗi phân giải chuỗi JSON của PowerShell)
+'{"spec":{"syncPolicy":null}}' | Out-File -Encoding ascii patch-tmp.json
+kubectl patch application online-boutique-dev -n argocd --type merge --patch-file patch-tmp.json
+Remove-Item patch-tmp.json
 ```
 
 ---
@@ -334,15 +364,16 @@ kubectl get pods -n online-boutique -l app=checkoutservice
 
 Sau khi hệ thống đã hồi phục và hoạt động bình thường:
 1. Quay lại repo `online-boutique-config`, cập nhật lại tag của service vừa rollback trong `overlays/dev/kustomization.yaml` bằng đúng tag đang chạy ổn định.
-2. Commit và push lên `main`.
+2. Commit và push lên nhánh `deploy/dev` (ArgoCD theo dõi nhánh `deploy/dev` cho cụm live dev cluster; template nằm trên `main`, giá trị thực tế trong `overlays/dev/env.properties` trên `deploy/dev`).
 3. Bật lại chính sách Auto-Sync cho ArgoCD:
 
 ##### Linux / macOS (Bash):
 ```bash
-cd <PROJECT_ROOT>/online-boutique-config
+# Chuyển sang thư mục gốc của repo online-boutique-config
+cd ../online-boutique-config
 git add overlays/dev/kustomization.yaml
 git commit -m "fix(gitops): reconcile checkoutservice image tag after emergency rollback"
-git push origin main
+git push origin deploy/dev
 
 # Bật lại Auto-Sync
 argocd app set online-boutique-dev --sync-policy automated --auto-prune --self-heal
@@ -350,10 +381,11 @@ argocd app set online-boutique-dev --sync-policy automated --auto-prune --self-h
 
 ##### Windows (PowerShell):
 ```powershell
-Set-Location -Path "<PROJECT_ROOT>\online-boutique-config"
+# Chuyển sang thư mục gốc của repo online-boutique-config
+Set-Location -Path "..\online-boutique-config"
 git add overlays/dev/kustomization.yaml
 git commit -m "fix(gitops): reconcile checkoutservice image tag after emergency rollback"
-git push origin main
+git push origin deploy/dev
 
 # Bật lại Auto-Sync
 argocd app set online-boutique-dev --sync-policy automated --auto-prune --self-heal
@@ -390,7 +422,8 @@ flowchart LR
 
 ##### Linux / macOS (Bash):
 ```bash
-cd <PROJECT_ROOT>/online-boutique-app/terraform-aws/environments/dev
+# Chạy từ thư mục gốc của repo online-boutique-app
+cd terraform-aws/environments/dev
 
 # 1. Checkout phiên bản commit Terraform ổn định trước đó
 git log --oneline -n 5
@@ -408,7 +441,8 @@ git checkout HEAD -- .
 
 ##### Windows (PowerShell):
 ```powershell
-Set-Location -Path "<PROJECT_ROOT>\online-boutique-app\terraform-aws\environments\dev"
+# Chạy từ thư mục gốc của repo online-boutique-app
+Set-Location -Path "terraform-aws\environments\dev"
 
 # 1. Checkout phiên bản commit Terraform ổn định trước đó
 git log --oneline -n 5
@@ -428,21 +462,28 @@ git checkout HEAD -- .
 
 ### 5.3 Xử Lý Sự Cố Kẹt State Lock (Terraform State Lock Resolution)
 
-Nếu quá trình apply trước đó bị ngắt đột ngột (do hủy workflow giữa chừng), DynamoDB sẽ giữ State Lock và từ chối các lệnh apply tiếp theo:
-`Error: Error acquiring the state lock: ConditionalCheckFailedException... Lock Info: ID: <lock-id>`
+Hệ thống sử dụng cơ chế khóa trạng thái **native trên S3** (`use_lockfile = true`, Terraform >= 1.10), **không sử dụng DynamoDB**.
+
+Nếu quá trình apply trước đó bị ngắt đột ngột (do hủy workflow giữa chừng hoặc mất kết nối mạng), một object `.tflock` stale vẫn còn tồn tại trong S3 bucket (`online-boutique-tfstate-<AWS_ACCOUNT_ID>`), khiến Terraform từ chối các lệnh apply tiếp theo với lỗi:  
+`Error: Error acquiring the state lock... Lock Info: ID: <LOCK_ID>`
+
+> [!WARNING]
+> **CẢNH BÁO:** Chỉ thực hiện `terraform force-unlock` khi bạn BẢO ĐẢM 100% không có pipeline CI/CD (`terraform-apply.yml`) hoặc kỹ sư nào khác đang chạy `terraform apply` hay `terraform destroy`. Mở khóa khi có một tiến trình khác đang ghi state sẽ làm hỏng (corrupt) tệp state!
 
 ##### Lệnh mở khóa cưỡng chế (Force Unlock):
 
 ##### Linux / macOS (Bash):
 ```bash
-cd <PROJECT_ROOT>/online-boutique-app/terraform-aws/environments/dev
-terraform force-unlock -force <LOCK-ID>
+# Chạy từ thư mục gốc của repo online-boutique-app
+cd terraform-aws/environments/dev
+terraform force-unlock <LOCK_ID>
 ```
 
 ##### Windows (PowerShell):
 ```powershell
-Set-Location -Path "<PROJECT_ROOT>\online-boutique-app\terraform-aws\environments\dev"
-terraform force-unlock -force <LOCK-ID>
+# Chạy từ thư mục gốc của repo online-boutique-app
+Set-Location -Path "terraform-aws\environments\dev"
+terraform force-unlock <LOCK_ID>
 ```
 
 ---

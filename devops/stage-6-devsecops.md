@@ -82,7 +82,7 @@ ln -sf ../../.githooks/pre-commit .git/hooks/pre-commit
 | **Vị trí** | Step 5.6 trong `ci-service.yml` |
 | **Scan target** | `./src/<service>` |
 | **Output** | SARIF → GitHub Security tab |
-| **Security Gate** | ❌ FAIL nếu CRITICAL hoặc HIGH CVE |
+| **Security Gate** | ⚠️ WARN (continue-on-error – SARIF uploaded, xem §7.5) |
 
 **Chức năng:** Quét dependencies (go.mod, package.json, requirements.txt, *.csproj, build.gradle) tìm CVEs.
 
@@ -104,9 +104,9 @@ ln -sf ../../.githooks/pre-commit .git/hooks/pre-commit
 | **Tool** | SonarCloud (SonarSource/sonarqube-scan-action@v5) |
 | **Vị trí** | Job `sonarcloud` trong `ci-main.yml` |
 | **Config** | `sonar-project.properties` |
-| **Organization** | `online-boutique-application-demo` |
+| **Organization** | `<GITHUB_ORG>` |
 | **Project Key** | `online-boutique-app` |
-| **Dashboard** | https://sonarcloud.io/project/overview?id=online-boutique-application-demo_online-boutique-app |
+| **Dashboard** | https://sonarcloud.io/project/overview?id=<GITHUB_ORG>_online-boutique-app |
 | **Security Gate** | ⚠️ WARN (review qua SonarCloud dashboard) |
 
 **Chức năng:** Phân tích static mã nguồn tìm bugs, vulnerabilities, code smells, security hotspots.
@@ -130,9 +130,9 @@ ln -sf ../../.githooks/pre-commit .git/hooks/pre-commit
 | **Vị trí** | Step 8b trong `ci-service.yml` |
 | **Scan target** | Docker image đã build local |
 | **Output** | SARIF → GitHub Security tab |
-| **Security Gate** | ❌ FAIL nếu CRITICAL hoặc HIGH CVE |
+| **Security Gate** | ⚠️ WARN (continue-on-error – SARIF uploaded, xem §7.5) |
 
-**Chức năng:** Quét CVEs trong Docker image (OS packages + app dependencies). Image chỉ được push sau khi scan pass.
+**Chức năng:** Quét CVEs trong Docker image (OS packages + app dependencies). Kết quả scan được xuất định dạng SARIF và upload lên GitHub Security tab; pipeline tiếp tục chạy để build và push image (xem §7.5).
 
 ### 2.7 Image Signing (Cosign)
 
@@ -145,12 +145,19 @@ ln -sf ../../.githooks/pre-commit .git/hooks/pre-commit
 
 **Chức năng:** Ký container images sau khi push lên ECR. Chữ ký được lưu trong Sigstore transparency log.
 
+> **Lưu ý cấu hình build:**
+> - Tính năng OCI provenance/attestation tạm thời tắt (`provenance: false`) trong workflow build do giới hạn của Docker buildx driver khi sử dụng cờ `load: true` (docker exporter không hỗ trợ attestation cùng lúc với load).
+> - Cần đăng nhập ECR (`aws ecr get-login-password | cosign login ...`) trước khi thực hiện `cosign verify`.
+
 **Verify signature:**
 ```bash
+# Đăng nhập ECR trước khi verify
+aws ecr get-login-password --region <AWS_REGION> | cosign login --username AWS --password-stdin <AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com
+
 cosign verify \
-  --certificate-identity-regexp="https://github.com/online-boutique-application-demo/*" \
+  --certificate-identity-regexp="https://github.com/<GITHUB_ORG>/*" \
   --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
-  798836978890.dkr.ecr.ap-southeast-1.amazonaws.com/online-boutique/<service>:<tag>
+  <AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/online-boutique/<service>:<tag>
 ```
 
 ### 2.8 DAST – OWASP ZAP
@@ -326,12 +333,17 @@ kubectl get policyreport -n online-boutique
 
 ### 6.4 Verify Cosign Signing
 
+> **Lưu ý:** Cần đăng nhập ECR trước khi chạy lệnh verify. Ngoài ra, OCI provenance/attestation đang tạm tắt (`provenance: false`) do hạn chế của Docker buildx driver với cờ `load: true`.
+
 ```bash
+# Đăng nhập ECR trước khi verify
+aws ecr get-login-password --region <AWS_REGION> | cosign login --username AWS --password-stdin <AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com
+
 # Verify signature
 cosign verify \
-  --certificate-identity-regexp="https://github.com/online-boutique-application-demo/*" \
+  --certificate-identity-regexp="https://github.com/<GITHUB_ORG>/*" \
   --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
-  798836978890.dkr.ecr.ap-southeast-1.amazonaws.com/online-boutique/frontend:sha-<commit>
+  <AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/online-boutique/frontend:sha-<commit>
 ```
 
 ### 6.5 Verify DAST
@@ -383,10 +395,10 @@ cosign verify \
 | Gate | Tool | Action | Severity |
 |------|------|--------|----------|
 | 🔑 Secret Found | gitleaks | ❌ BLOCK | Critical |
-| 📦 CRITICAL/HIGH CVE (deps) | Trivy FS | ❌ BLOCK | Critical |
+| 📦 CRITICAL/HIGH CVE (deps) | Trivy FS | ⚠️ WARN (continue-on-error – SARIF uploaded, xem §7.5) | Critical |
 | 🔬 SAST Issues | SonarCloud | ⚠️ WARN | Medium |
 | 📝 Dockerfile Issues | Hadolint | ⚠️ WARN | Low |
-| 🐳 CRITICAL/HIGH CVE (image) | Trivy Image | ❌ BLOCK | Critical |
+| 🐳 CRITICAL/HIGH CVE (image) | Trivy Image | ⚠️ WARN (continue-on-error – SARIF uploaded, xem §7.5) | Critical |
 | ✍️ Unsigned Image | Cosign + Kyverno | ⚠️ AUDIT | Medium |
 | 🌐 Runtime Vuln | OWASP ZAP | ⚠️ REPORT | Medium |
 | 🛡️ Privileged Container | Kyverno | ❌ BLOCK | Critical |

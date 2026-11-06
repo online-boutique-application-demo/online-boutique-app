@@ -22,10 +22,8 @@ terraform {
   }
 
   backend "s3" {
-    # bucket name will be: online-boutique-tfstate-<ACCOUNT_ID>
-    bucket       = "online-boutique-tfstate-798836978890"
+    # Values supplied via -backend-config (CI) or backend.hcl (local)
     key          = "environments/dev/terraform.tfstate"
-    region       = "ap-southeast-1"
     encrypt      = true
     use_lockfile = true
   }

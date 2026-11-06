@@ -348,6 +348,7 @@ jobs:
           image_full: ${{ steps.meta.outputs.image_full }}
           config_repo: ${{ github.repository_owner }}/online-boutique-config
           config_repo_token: ${{ secrets.CONFIG_REPO_TOKEN }}
+          config_repo_branch: ${{ vars.CONFIG_REPO_BRANCH || 'main' }}
 
       # ─────────────────────────────────────────
       # 10. Summary

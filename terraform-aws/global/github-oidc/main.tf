@@ -19,9 +19,8 @@ terraform {
   }
 
   backend "s3" {
-    bucket       = "online-boutique-tfstate-798836978890"
+    # Values supplied via -backend-config (CI) or backend.hcl (local)
     key          = "global/github-oidc/terraform.tfstate"
-    region       = "ap-southeast-1"
     encrypt      = true
     use_lockfile = true
   }
@@ -195,7 +194,6 @@ variable "aws_region" {
 variable "github_org" {
   description = "GitHub organization or user name"
   type        = string
-  default     = "<YOUR_GITHUB_ORG>"
 }
 
 variable "github_repo_app" {

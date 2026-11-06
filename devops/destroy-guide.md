@@ -4,6 +4,24 @@
 
 ---
 
+### Thiết lập biến môi trường (Environment Variables)
+
+Trước khi thực thi các lệnh bên dưới, hãy thiết lập các biến môi trường tương ứng với phiên terminal của bạn:
+
+##### Linux / macOS (Bash):
+```bash
+export AWS_ACCOUNT_ID=<AWS_ACCOUNT_ID>
+export AWS_REGION=<AWS_REGION>
+export EKS_CLUSTER_NAME=online-boutique-dev
+```
+
+##### Windows (PowerShell):
+```powershell
+$env:AWS_ACCOUNT_ID = "<AWS_ACCOUNT_ID>"; $env:AWS_REGION = "<AWS_REGION>"; $env:EKS_CLUSTER_NAME = "online-boutique-dev"
+```
+
+---
+
 ## 1. Tại Sao Không Thể Chạy `terraform destroy` Ngay Lập Tức?
 
 Trong kiến trúc Kubernetes hiện đại trên AWS (EKS), có 2 nhóm tài nguyên:
@@ -33,16 +51,17 @@ Mở PowerShell (hoặc Bash) tại thư mục `online-boutique-config` và ch�
 
 #### Trên Windows (PowerShell):
 ```powershell
-Set-Location -Path "<PROJECT_ROOT>\online-boutique-config"
+# Chuyển sang thư mục gốc của repo online-boutique-config
+Set-Location -Path "..\online-boutique-config"
 
-# 1. Dọn dẹp Monitoring Stack (Stage 5) - Xóa Helm releases & giải phóng EBS Volumes
-helm uninstall kube-prometheus-stack loki-stack tempo otel-collector -n monitoring 2>$null
+# 1. Dọn dẹp Monitoring Stack (Stage 5) - Xóa ArgoCD Applications & giải phóng EBS Volumes
+kubectl delete application kube-prometheus-stack loki-stack tempo otel-collector monitoring-stack-dev -n argocd --timeout=60s 2>$null
 kubectl delete pvc --all -n monitoring --timeout=60s
 kubectl delete namespace monitoring --timeout=60s
 
 # 2. Dọn dẹp Service Mesh Istio & Ứng dụng (Stage 4) - Thu hồi Ingress Gateway NLB
 helm uninstall kiali-server -n istio-system 2>$null
-kubectl delete application online-boutique-dev istio-config -n argocd --timeout=60s 2>$null
+kubectl delete application online-boutique-dev istio-config-dev -n argocd --timeout=60s 2>$null
 kubectl delete namespace online-boutique --timeout=90s
 
 # Gỡ bỏ Istio để AWS thu hồi hoàn toàn Network Load Balancer (NLB)
@@ -57,16 +76,17 @@ kubectl delete namespace argocd --timeout=60s
 
 #### Trên Linux / macOS (Bash):
 ```bash
-cd <PROJECT_ROOT>/online-boutique-config
+# Chuyển sang thư mục gốc của repo online-boutique-config
+cd ../online-boutique-config
 
 # 1. Dọn dẹp Monitoring Stack (Stage 5)
-helm uninstall kube-prometheus-stack loki-stack tempo otel-collector -n monitoring 2>/dev/null || true
+kubectl delete application kube-prometheus-stack loki-stack tempo otel-collector monitoring-stack-dev -n argocd --timeout=60s 2>/dev/null || true
 kubectl delete pvc --all -n monitoring --timeout=60s || true
 kubectl delete namespace monitoring --timeout=60s || true
 
 # 2. Dọn dẹp Service Mesh Istio & Ứng dụng (Stage 4)
 helm uninstall kiali-server -n istio-system 2>/dev/null || true
-kubectl delete application online-boutique-dev istio-config -n argocd --timeout=60s 2>/dev/null || true
+kubectl delete application online-boutique-dev istio-config-dev -n argocd --timeout=60s 2>/dev/null || true
 kubectl delete namespace online-boutique --timeout=90s || true
 
 istioctl uninstall --purge -y || true
@@ -82,8 +102,8 @@ kubectl delete namespace argocd --timeout=60s || true
 
 #### Kiểm tra xác nhận các Load Balancer đã được thu hồi sạch sẽ:
 ```powershell
-aws elbv2 describe-load-balancers --region <AWS_REGION> --query "LoadBalancers[*].LoadBalancerName"
-aws elb describe-load-balancers --region <AWS_REGION> --query "LoadBalancerDescriptions[*].LoadBalancerName"
+aws elbv2 describe-load-balancers --region $env:AWS_REGION --query "LoadBalancers[*].LoadBalancerName"
+aws elb describe-load-balancers --region $env:AWS_REGION --query "LoadBalancerDescriptions[*].LoadBalancerName"
 ```
 *(Cả 2 lệnh trên trả về `[]` nghĩa là các ELB/NLB và ENI đã được AWS giải phóng hoàn toàn).*
 
@@ -94,7 +114,8 @@ aws elb describe-load-balancers --region <AWS_REGION> --query "LoadBalancerDescr
 Chuyển vào thư mục môi trường dev và chạy lệnh destroy:
 
 ```powershell
-cd <PROJECT_ROOT>\online-boutique-app\terraform-aws\environments\dev
+# Chạy từ thư mục gốc của repo online-boutique-app
+Set-Location -Path "terraform-aws\environments\dev"
 terraform destroy -auto-approve
 ```
 
@@ -104,57 +125,160 @@ Terraform sẽ xóa toàn bộ EKS Cluster, Spot Node Groups, ElastiCache Redis,
 
 ## 3. Script Dọn Dẹp Khẩn Cấp (Khi Đã Lỡ Bị Kẹt Do Xóa EKS Trước)
 
-Nếu bạn đã lỡ bấm `terraform destroy` trước khi dọn dẹp K8s Services khiến EKS đã mất mà VPC bị kẹt không thể xóa, hãy chạy script Python sau để cưỡng chế xóa sạch toàn bộ tài nguyên mồ côi:
+Nếu bạn đã lỡ bấm `terraform destroy` trước khi dọn dẹp K8s Services khiến EKS đã mất mà VPC bị kẹt không thể xóa do lỗi `DependencyViolation`, hãy sử dụng script Python an toàn dưới đây:
 
+> [!WARNING]
+> **CẢNH BÁO NGUY HIỂM:** Script dưới đây chỉ sử dụng trong tình huống khẩn cấp khi cụm EKS đã bị xóa trước nhưng Load Balancers / Security Groups mồ côi vẫn còn tồn tại trong VPC gây lỗi `DependencyViolation`.  
+> Script hoạt động ở chế độ **DRY-RUN** theo mặc định (chỉ liệt kê tài nguyên tìm thấy, KHÔNG xóa). Bắt buộc phải cung cấp đúng `CLUSTER_NAME` và `VPC_ID` để giới hạn phạm vi trong đúng VPC và chỉ chọn các tài nguyên mang tag `kubernetes.io/cluster/<CLUSTER_NAME>` hoặc `elbv2.k8s.aws/cluster`. Để thực sự xóa tài nguyên, cần truyền thêm đối số `--apply`.
+
+##### Lưu script vào file `cleanup_orphaned.py` hoặc chạy trực tiếp:
+
+```python
+import argparse
+import json
+import os
+import subprocess
+import sys
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Dọn dẹp an toàn tài nguyên K8s mồ côi (ELB, TG, SG) cho một cụm EKS cụ thể."
+    )
+    parser.add_argument("--cluster-name", required=True, help="Tên cụm EKS (ví dụ: online-boutique-dev)")
+    parser.add_argument("--vpc-id", required=True, help="ID của VPC (ví dụ: vpc-0123456789abcdef0)")
+    parser.add_argument("--region", default=os.environ.get("AWS_REGION", "ap-southeast-1"), help="AWS Region")
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        default=False,
+        help="Thực hiện xóa tài nguyên (mặc định là DRY-RUN chỉ in danh sách)",
+    )
+    args = parser.parse_args()
+
+    cluster_name = args.cluster_name
+    vpc_id = args.vpc_id
+    region = args.region
+    apply_mode = args.apply
+    cluster_tag = f"kubernetes.io/cluster/{cluster_name}"
+
+    mode_label = "THỰC THI XÓA (--apply)" if apply_mode else "DRY-RUN (Chỉ kiểm tra, không xóa)"
+    print(f"=== Bắt đầu quét tài nguyên mồ côi [{mode_label}] ===")
+    print(f"Cluster Name : {cluster_name}")
+    print(f"VPC ID       : {vpc_id}")
+    print(f"Region       : {region}\n")
+
+    # 1. Quét ELBv2 (Application / Network Load Balancers)
+    try:
+        cmd = ["aws", "elbv2", "describe-load-balancers", "--region", region, "--output", "json"]
+        out = subprocess.check_output(cmd)
+        lbs = json.loads(out).get("LoadBalancers", [])
+        for lb in lbs:
+            if lb.get("VpcId") != vpc_id:
+                continue
+            arn = lb["LoadBalancerArn"]
+            name = lb.get("LoadBalancerName", "")
+            t_cmd = ["aws", "elbv2", "describe-tags", "--resource-arns", arn, "--region", region, "--output", "json"]
+            t_out = json.loads(subprocess.check_output(t_cmd))
+            tags = {t["Key"]: t.get("Value") for desc in t_out.get("TagDescriptions", []) for t in desc.get("Tags", [])}
+            if cluster_tag in tags or tags.get("elbv2.k8s.aws/cluster") == cluster_name:
+                if apply_mode:
+                    print(f"[APPLY] Đang xóa ELBv2: {name} ({arn})")
+                    subprocess.call(["aws", "elbv2", "delete-load-balancer", "--load-balancer-arn", arn, "--region", region])
+                else:
+                    print(f"[DRY-RUN] Phát hiện ELBv2 sẽ bị xóa: {name} ({arn})")
+    except Exception as e:
+        print("Lỗi kiểm tra ELBv2:", e)
+
+    # 2. Quét Classic ELB
+    try:
+        cmd = ["aws", "elb", "describe-load-balancers", "--region", region, "--output", "json"]
+        out = subprocess.check_output(cmd)
+        lbs = json.loads(out).get("LoadBalancerDescriptions", [])
+        for lb in lbs:
+            if lb.get("VPCId") != vpc_id:
+                continue
+            name = lb.get("LoadBalancerName", "")
+            t_cmd = ["aws", "elb", "describe-tags", "--load-balancer-name", name, "--region", region, "--output", "json"]
+            t_out = json.loads(subprocess.check_output(t_cmd))
+            tags = {t["Key"]: t.get("Value") for desc in t_out.get("TagDescriptions", []) for t in desc.get("Tags", [])}
+            if cluster_tag in tags or tags.get("elbv2.k8s.aws/cluster") == cluster_name:
+                if apply_mode:
+                    print(f"[APPLY] Đang xóa Classic ELB: {name}")
+                    subprocess.call(["aws", "elb", "delete-load-balancer", "--load-balancer-name", name, "--region", region])
+                else:
+                    print(f"[DRY-RUN] Phát hiện Classic ELB sẽ bị xóa: {name}")
+    except Exception as e:
+        print("Lỗi kiểm tra Classic ELB:", e)
+
+    # 3. Quét Target Groups
+    try:
+        cmd = ["aws", "elbv2", "describe-target-groups", "--region", region, "--output", "json"]
+        out = subprocess.check_output(cmd)
+        tgs = json.loads(out).get("TargetGroups", [])
+        for tg in tgs:
+            if tg.get("VpcId") != vpc_id:
+                continue
+            arn = tg["TargetGroupArn"]
+            name = tg.get("TargetGroupName", "")
+            t_cmd = ["aws", "elbv2", "describe-tags", "--resource-arns", arn, "--region", region, "--output", "json"]
+            t_out = json.loads(subprocess.check_output(t_cmd))
+            tags = {t["Key"]: t.get("Value") for desc in t_out.get("TagDescriptions", []) for t in desc.get("Tags", [])}
+            if cluster_tag in tags or tags.get("elbv2.k8s.aws/cluster") == cluster_name:
+                if apply_mode:
+                    print(f"[APPLY] Đang xóa Target Group: {name} ({arn})")
+                    subprocess.call(["aws", "elbv2", "delete-target-group", "--target-group-arn", arn, "--region", region])
+                else:
+                    print(f"[DRY-RUN] Phát hiện Target Group sẽ bị xóa: {name} ({arn})")
+    except Exception as e:
+        print("Lỗi kiểm tra Target Group:", e)
+
+    # 4. Quét Security Groups k8s-*
+    try:
+        cmd = [
+            "aws", "ec2", "describe-security-groups",
+            "--region", region,
+            "--filters", f"Name=vpc-id,Values={vpc_id}", "Name=group-name,Values=k8s-*",
+            "--output", "json"
+        ]
+        out = subprocess.check_output(cmd)
+        sgs = json.loads(out).get("SecurityGroups", [])
+        for sg in sgs:
+            sg_id = sg["GroupId"]
+            sg_name = sg.get("GroupName", "")
+            tags = {t["Key"]: t.get("Value") for t in sg.get("Tags", [])}
+            if cluster_tag in tags or tags.get("elbv2.k8s.aws/cluster") == cluster_name:
+                if apply_mode:
+                    print(f"[APPLY] Đang xóa Security Group: {sg_name} ({sg_id})")
+                    subprocess.call(["aws", "ec2", "delete-security-group", "--group-id", sg_id, "--region", region])
+                else:
+                    print(f"[DRY-RUN] Phát hiện Security Group sẽ bị xóa: {sg_name} ({sg_id})")
+    except Exception as e:
+        print("Lỗi kiểm tra Security Group:", e)
+
+    print("\nHoàn tất quá trình quét!")
+
+if __name__ == "__main__":
+    main()
+```
+
+##### Cách thực thi:
+
+###### Windows (PowerShell):
 ```powershell
-python -c "
-import subprocess, json
+# 1. Quét ở chế độ DRY-RUN (an toàn, chỉ in danh sách tài nguyên phát hiện):
+python cleanup_orphaned.py --cluster-name $env:EKS_CLUSTER_NAME --vpc-id $VPC_ID --region $env:AWS_REGION
 
-region = '<AWS_REGION>'
+# 2. Sau khi xác nhận đúng danh sách, thực thi xóa thật bằng cờ --apply:
+python cleanup_orphaned.py --cluster-name $env:EKS_CLUSTER_NAME --vpc-id $VPC_ID --region $env:AWS_REGION --apply
+```
 
-# 1. Xóa tất cả NLB/ALB còn sót
-try:
-    cmd = ['aws', 'elbv2', 'describe-load-balancers', '--region', region, '--query', 'LoadBalancers[*].LoadBalancerArn', '--output', 'json']
-    arns = json.loads(subprocess.check_output(cmd))
-    for arn in arns:
-        print(f'Deleting ELBv2: {arn}')
-        subprocess.call(['aws', 'elbv2', 'delete-load-balancer', '--load-balancer-arn', arn, '--region', region])
-except Exception as e:
-    print('ELBv2 check:', e)
+###### Linux / macOS (Bash):
+```bash
+# 1. Quét ở chế độ DRY-RUN (an toàn, chỉ in danh sách tài nguyên phát hiện):
+python cleanup_orphaned.py --cluster-name $EKS_CLUSTER_NAME --vpc-id $VPC_ID --region $AWS_REGION
 
-# 2. Xóa Classic ELB còn sót
-try:
-    cmd = ['aws', 'elb', 'describe-load-balancers', '--region', region, '--query', 'LoadBalancerDescriptions[*].LoadBalancerName', '--output', 'json']
-    names = json.loads(subprocess.check_output(cmd))
-    for name in names:
-        print(f'Deleting Classic ELB: {name}')
-        subprocess.call(['aws', 'elb', 'delete-load-balancer', '--load-balancer-name', name, '--region', region])
-except Exception as e:
-    print('Classic ELB check:', e)
-
-# 3. Xóa Target Groups k8s
-try:
-    cmd = ['aws', 'elbv2', 'describe-target-groups', '--region', region, '--query', 'TargetGroups[*].[TargetGroupName,TargetGroupArn]', '--output', 'json']
-    tgs = json.loads(subprocess.check_output(cmd))
-    for name, arn in tgs:
-        if 'k8s-' in name:
-            print(f'Deleting TG: {name}')
-            subprocess.call(['aws', 'elbv2', 'delete-target-group', '--target-group-arn', arn, '--region', region])
-except Exception as e:
-    print('TG check:', e)
-
-# 4. Xóa Security Groups k8s
-try:
-    cmd = ['aws', 'ec2', 'describe-security-groups', '--region', region, '--filters', 'Name=group-name,Values=k8s-*', '--query', 'SecurityGroups[*].GroupId', '--output', 'json']
-    sgs = json.loads(subprocess.check_output(cmd))
-    for sg in sgs:
-        print(f'Deleting SG: {sg}')
-        subprocess.call(['aws', 'ec2', 'delete-security-group', '--group-id', sg, '--region', region])
-except Exception as e:
-    print('SG check:', e)
-
-print('Clean up completed! Now you can re-run terraform destroy.')
-"
+# 2. Sau khi xác nhận đúng danh sách, thực thi xóa thật bằng cờ --apply:
+python cleanup_orphaned.py --cluster-name $EKS_CLUSTER_NAME --vpc-id $VPC_ID --region $AWS_REGION --apply
 ```
 
 Sau khi script chạy xong, bạn chỉ cần gõ lại `terraform destroy -auto-approve` là VPC sẽ được giải phóng hoàn tất.
@@ -168,12 +292,12 @@ Vào đầu ngày mới khi bắt đầu làm việc, thực hiện tuần tự 
 ### 4.1 Khởi Tạo Nền Tảng Hạ Tầng AWS & EKS (Stage 1 & 2)
 
 ```powershell
-# 1. Chạy Terraform Apply
-cd <PROJECT_ROOT>\online-boutique-app\terraform-aws\environments\dev
+# 1. Chạy Terraform Apply (từ thư mục gốc của repo online-boutique-app)
+Set-Location -Path "terraform-aws\environments\dev"
 terraform apply -auto-approve
 
 # 2. Cập nhật Kubeconfig để kubectl kết nối tới EKS Cluster mới
-aws eks update-kubeconfig --region <AWS_REGION> --name <EKS_CLUSTER_NAME>
+aws eks update-kubeconfig --region $env:AWS_REGION --name $env:EKS_CLUSTER_NAME
 ```
 *(Quá trình mất khoảng 10–12 phút để dựng mới VPC, EKS Spot Nodes và ElastiCache Redis).*
 
@@ -182,7 +306,8 @@ aws eks update-kubeconfig --region <AWS_REGION> --name <EKS_CLUSTER_NAME>
 ### 4.2 Cài Đặt ArgoCD & Core Controllers (Stage 3)
 
 ```powershell
-cd <PROJECT_ROOT>\online-boutique-config
+# Chuyển sang thư mục gốc của repo online-boutique-config
+Set-Location -Path "..\online-boutique-config"
 
 # 1. Cài đặt ArgoCD Controller
 helm install argocd argo/argo-cd `
@@ -209,7 +334,8 @@ kubectl wait --for=condition=available deployment/cluster-autoscaler-aws-cluster
 ### 4.3 Khởi Tạo Istio Service Mesh & Kiali (Stage 4)
 
 ```powershell
-cd <PROJECT_ROOT>\online-boutique-config
+# Chuyển sang thư mục gốc của repo online-boutique-config
+Set-Location -Path "..\online-boutique-config"
 
 # 1. Cài đặt Istio core control plane và Ingress Gateway
 istioctl install --set profile=default -y
@@ -249,19 +375,21 @@ Có 2 phương án để triển khai lại stack giám sát:
 #### Phương Án A: Tự Động Hoàn Toàn Bằng ArgoCD GitOps (Khuyên Dùng)
 
 ```powershell
-cd <PROJECT_ROOT>\online-boutique-config
+# Chuyển sang thư mục gốc của repo online-boutique-config
+Set-Location -Path "..\online-boutique-config"
 
 # Áp dụng toàn bộ ArgoCD Applications (các app đã tồn tại từ Stage 3, 4 sẽ báo unchanged)
 kubectl apply -f argocd/apps/dev/
 ```
 
 > [!TIP]
-> Lệnh trên sẽ apply tất cả 9 file YAML trong thư mục, bao gồm cả các app đã tạo ở bước 4.2 và 4.3. ArgoCD sẽ bỏ qua những app đã tồn tại (`unchanged`) và chỉ tạo mới 5 app monitoring: `monitoring-stack`, `kube-prometheus-stack`, `loki`, `tempo`, `otel-collector`.
+> Lệnh trên sẽ apply tất cả các file YAML trong thư mục, bao gồm cả các app đã tạo ở bước 4.2 và 4.3. ArgoCD sẽ bỏ qua những app đã tồn tại (`unchanged`) và chỉ tạo mới 5 app monitoring: `monitoring-stack-dev`, `kube-prometheus-stack`, `loki-stack`, `tempo`, `otel-collector`.
 
 #### Phương Án B: Cài Đặt Trực Tiếp Bằng Helm CLI (Khi Cần Dựng Nhanh)
 
 ```powershell
-cd <PROJECT_ROOT>\online-boutique-config
+# Chuyển sang thư mục gốc của repo online-boutique-config
+Set-Location -Path "..\online-boutique-config"
 
 # 1. Cập nhật Helm repositories
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
@@ -284,7 +412,7 @@ helm upgrade --install otel-collector open-telemetry/opentelemetry-collector --n
 ### 4.5 Kích Hoạt Distributed Tracing (Khởi Động Lại Workloads)
 
 > [!NOTE]
-> Cấu hình tracing (`istio-mesh-configmap.yaml`, `telemetry.yaml`, `otel-collector-destination-rule.yaml`) đã nằm trong `base/istio/kustomization.yaml` và được ArgoCD app `istio-config` tự động đồng bộ ở bước 4.3. Tuy nhiên, các Envoy sidecar cần được khởi động lại **sau khi monitoring services đã sẵn sàng** để nạp cấu hình tracing mới và kết nối thành công tới OTel Collector.
+> Cấu hình tracing (`istio-mesh-configmap.yaml`, `telemetry.yaml`, `otel-collector-destination-rule.yaml`) đã nằm trong `base/istio/kustomization.yaml` và được ArgoCD app `istio-config-dev` tự động đồng bộ ở bước 4.3. Tuy nhiên, các Envoy sidecar cần được khởi động lại **sau khi monitoring services đã sẵn sàng** để nạp cấu hình tracing mới và kết nối thành công tới OTel Collector.
 
 ```powershell
 # Chờ monitoring pods sẵn sàng (~60-90s) rồi khởi động lại workloads để nạp cấu hình tracing
@@ -326,7 +454,7 @@ Mở các terminal riêng biệt để truy cập các dashboard quản trị:
 | Dịch vụ | Lệnh Port-Forward | URL Truy Cập | Tài Khoản / Lưu Ý |
 | :--- | :--- | :--- | :--- |
 | **Ứng dụng Web** | *(Qua NLB Public Ingress)* | `http://<NLB-DNS-Name>` | Xem DNS: `kubectl get svc istio-ingressgateway -n istio-system` |
-| **Grafana** | `kubectl port-forward -n monitoring svc/grafana 3000:80` | `http://localhost:3000` | `admin` / `admin` (Dashboards, Logs, Traces) |
+| **Grafana** | `kubectl port-forward -n monitoring svc/grafana 3000:80` | `http://localhost:3000` | `admin` / Lấy password từ Secret `grafana-admin` trong namespace `monitoring` (key `admin-password`) |
 | **Kiali** | `kubectl port-forward -n istio-system svc/kiali 20001:20001` | `http://localhost:20001/kiali` | Đăng nhập ẩn danh (Service Mesh Topology) |
 | **Prometheus** | `kubectl port-forward -n monitoring svc/prometheus-server 9090:80` | `http://localhost:9090` | PromQL queries, targets |
 | **Alertmanager** | `kubectl port-forward -n monitoring svc/alertmanager 9093:9093` | `http://localhost:9093` | Quản lý cảnh báo & Silences |

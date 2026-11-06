@@ -6,6 +6,24 @@
 
 ---
 
+### Thiết lập biến môi trường (Environment Variables)
+
+Trước khi thực thi các lệnh bên dưới, hãy thiết lập các biến môi trường tương ứng với phiên terminal của bạn:
+
+##### Linux / macOS (Bash):
+```bash
+export AWS_ACCOUNT_ID=<AWS_ACCOUNT_ID>
+export AWS_REGION=<AWS_REGION>
+export EKS_CLUSTER_NAME=online-boutique-dev
+```
+
+##### Windows (PowerShell):
+```powershell
+$env:AWS_ACCOUNT_ID = "<AWS_ACCOUNT_ID>"; $env:AWS_REGION = "<AWS_REGION>"; $env:EKS_CLUSTER_NAME = "online-boutique-dev"
+```
+
+---
+
 ## 📑 Bảng Tra Cứu Nhanh (Quick Navigation Matrix)
 
 | Chủ đề | Thành phần áp dụng | Mục tiêu chính | Tham chiếu |
@@ -120,11 +138,17 @@ spec:
 
 ### 1.4 Lệnh Quản Trị HPA Nhanh Bằng Kubectl
 
+> [!NOTE]
+> **Quy ước đặt tên HPA:**
+> - Khi dùng lệnh `kubectl autoscale deployment <name>`, Kubernetes tự động đặt tên tài nguyên HPA trùng với tên Deployment (ví dụ: `frontend`).
+> - Khi áp dụng qua tệp manifest YAML ở mục 1.3, tên tài nguyên HPA được định nghĩa là `frontend-hpa`.
+> Hãy chú ý tên HPA tương ứng với phương pháp bạn đã triển khai khi chạy lệnh `describe`.
+
 #### Tạo nhanh HPA bằng lệnh:
 
 ##### Trên Linux / macOS (Bash):
 ```bash
-# Tạo HPA cho frontend: min 2, max 10, ngưỡng CPU 70%
+# Tạo HPA cho frontend: min 2, max 10, ngưỡng CPU 70% (tên HPA sinh ra là 'frontend')
 kubectl autoscale deployment frontend -n online-boutique --cpu-percent=70 --min=2 --max=10
 
 # Tạo HPA cho checkoutservice: min 1, max 5, ngưỡng CPU 70%
@@ -136,7 +160,7 @@ kubectl autoscale deployment cartservice -n online-boutique --cpu-percent=70 --m
 
 ##### Trên Windows (PowerShell):
 ```powershell
-# Tạo HPA cho frontend: min 2, max 10, ngưỡng CPU 70%
+# Tạo HPA cho frontend: min 2, max 10, ngưỡng CPU 70% (tên HPA sinh ra là 'frontend')
 kubectl autoscale deployment frontend -n online-boutique --cpu-percent=70 --min=2 --max=10
 
 # Tạo HPA cho checkoutservice: min 1, max 5, ngưỡng CPU 70%
@@ -153,7 +177,10 @@ kubectl autoscale deployment cartservice -n online-boutique --cpu-percent=70 --m
 # Liệt kê tất cả HPA trong namespace online-boutique
 kubectl get hpa -n online-boutique
 
-# Xem chi tiết điều kiện kích hoạt và sự kiện scale của frontend
+# Xem chi tiết điều kiện kích hoạt và sự kiện scale của frontend:
+# - Nếu tạo qua kubectl autoscale (tên HPA là frontend):
+kubectl describe hpa frontend -n online-boutique
+# - Hoặc nếu tạo qua manifest YAML ở mục 1.3 (tên HPA là frontend-hpa):
 kubectl describe hpa frontend-hpa -n online-boutique
 ```
 
@@ -162,7 +189,10 @@ kubectl describe hpa frontend-hpa -n online-boutique
 # Liệt kê tất cả HPA trong namespace online-boutique
 kubectl get hpa -n online-boutique
 
-# Xem chi tiết điều kiện kích hoạt và sự kiện scale của frontend
+# Xem chi tiết điều kiện kích hoạt và sự kiện scale của frontend:
+# - Nếu tạo qua kubectl autoscale (tên HPA là frontend):
+kubectl describe hpa frontend -n online-boutique
+# - Hoặc nếu tạo qua manifest YAML ở mục 1.3 (tên HPA là frontend-hpa):
 kubectl describe hpa frontend-hpa -n online-boutique
 ```
 
@@ -208,6 +238,7 @@ node_max_size     = 8   # Nâng trần tối đa từ 5 lên 8 nodes
 
 ##### Trên Linux / macOS (Bash):
 ```bash
+# Chạy từ thư mục gốc của repo online-boutique-app
 cd terraform-aws/environments/dev
 
 # 1. Khởi tạo và kiểm tra kế hoạch thay đổi
@@ -219,7 +250,8 @@ terraform apply -target=module.eks -auto-approve
 
 ##### Trên Windows (PowerShell):
 ```powershell
-Set-Location -Path "<PROJECT_ROOT>\online-boutique-app\terraform-aws\environments\dev"
+# Chạy từ thư mục gốc của repo online-boutique-app
+Set-Location -Path "terraform-aws\environments\dev"
 
 # 1. Khởi tạo và kiểm tra kế hoạch thay đổi
 terraform plan -target=module.eks
@@ -241,7 +273,7 @@ kubectl logs -n kube-system -l app.kubernetes.io/name=aws-cluster-autoscaler -f 
 kubectl get cm cluster-autoscaler-status -n kube-system -o yaml
 
 # 3. Liệt kê danh sách các Nodes và nhãn vòng đời (Spot / On-Demand)
-kubectl get nodes -L node.kubernetes.io/instance-type,karpenter.sh/capacity-type,topology.kubernetes.io/zone
+kubectl get nodes -L node.kubernetes.io/instance-type,eks.amazonaws.com/capacityType,topology.kubernetes.io/zone
 ```
 
 ##### Trên Windows (PowerShell):
@@ -253,7 +285,7 @@ kubectl logs -n kube-system -l app.kubernetes.io/name=aws-cluster-autoscaler -f 
 kubectl get cm cluster-autoscaler-status -n kube-system -o yaml
 
 # 3. Liệt kê danh sách các Nodes và nhãn vòng đời (Spot / On-Demand)
-kubectl get nodes -L node.kubernetes.io/instance-type,karpenter.sh/capacity-type,topology.kubernetes.io/zone
+kubectl get nodes -L node.kubernetes.io/instance-type,eks.amazonaws.com/capacityType,topology.kubernetes.io/zone
 ```
 
 ---

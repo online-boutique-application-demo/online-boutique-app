@@ -1,282 +1,405 @@
 # Setup Guide — Online Boutique DevOps Project
 
-This guide provides end-to-end instructions for configuring, provisioning, and deploying the **Online Boutique** cloud-native microservices platform on **Amazon Web Services (AWS)** using Terraform, GitHub Actions, and ArgoCD (GitOps).
+This guide provides comprehensive, step-by-step instructions for configuring, provisioning, and deploying the **Google Online Boutique** microservices application on **Amazon Web Services (AWS)** using Terraform IaC, GitHub Actions CI/CD, and ArgoCD GitOps.
 
-All sensitive and environment-specific values in this repository have been sanitized into standardized placeholders. Following this guide will help you configure both the application repository (`online-boutique-app`) and configuration repository (`online-boutique-config`) for your own AWS account and GitHub organization.
+> [!WARNING]
+> **CRITICAL SECURITY REQUIREMENT: NEVER COMMIT REAL ENVIRONMENT VALUES TO `main`**
+> The `main` branch across both repositories (`online-boutique-app` and `online-boutique-config`) is maintained strictly as an **account-agnostic, public template**.
+> All real environment values (such as AWS Account ID, IAM usernames, ECR registries, and Redis endpoints) must **ONLY** reside in gitignored local files (`backend.hcl`, `terraform.tfvars`) and dedicated deployment branches (e.g., `deploy/dev`, `deploy/staging`) in `online-boutique-config`.
+> **Never commit or push real environment values to `main` or public forks.**
+
+---
+
+## Architecture & Repository Model
+
+The solution uses a two-repository GitOps structure:
+
+```text
+online-boutique-workspace/
+├── online-boutique-app/        # Source code, Dockerfiles, Terraform IaC, GitHub Actions CI
+└── online-boutique-config/     # Kubernetes manifests, Kustomize overlays, ArgoCD Application templates
+```
+
+### GitOps Branching Model
+- **`main` Branch (Public Template):**
+  - Contains generic Kubernetes manifests and Kustomize overlays.
+  - Image paths use generic placeholders: `REGISTRY/online-boutique/<service>:latest`.
+  - `overlays/<env>/env.properties` contains standardized placeholders only.
+- **`deploy/<env>` Branches (Live Deployments, e.g. `deploy/dev`):**
+  - Active cluster environments track their respective `deploy/<env>` branch.
+  - Only `overlays/<env>/env.properties` is populated with real values (`ECR_REGISTRY`, `REDIS_ADDR`).
+  - Kustomize `replacements` and `configMapGenerator` dynamically inject real registry URLs and Redis connection strings into Kubernetes Deployments at render time.
+  - GitHub Actions CI workflows automatically commit updated image tags to `CONFIG_REPO_BRANCH` (`deploy/dev`).
 
 ---
 
 ## Prerequisites
 
-Before starting, ensure you have the following prerequisites configured:
+Before beginning, ensure you have an active **AWS Account** with administrative privileges and a **GitHub Account**. Verify the following CLI tools are installed on your machine:
 
-### Cloud & Code Repositories
-- **AWS Account:** Active AWS account with IAM Administrator access (or sufficient privileges for VPC, EKS, ECR, ElastiCache, S3, DynamoDB, and IAM roles).
-- **GitHub Account:** Two repositories created under your GitHub user or organization:
-  1. `online-boutique-app` (source code, Dockerfiles, Terraform IaC, CI pipelines)
-  2. `online-boutique-config` (Kubernetes manifests, Kustomize overlays, ArgoCD Application definitions)
-
-### CLI Tools
-Install and verify the following tools on your local machine:
-| Tool | Minimum Version | Installation / Verification Command |
-|---|---|---|
-| **AWS CLI** | `v2.x` | `aws --version` |
-| **Terraform** | `>= 1.12.0` | `terraform -version` |
-| **kubectl** | `>= 1.36.0` | `kubectl version --client` |
-| **Helm** | `>= 3.x` | `helm version` |
-| **Git** | `>= 2.x` | `git --version` |
-| **Docker** | `>= 20.x` | `docker --version` |
-
-### Optional Tools
-- **istioctl** (`>= 1.24`): Useful for debugging Istio service mesh and inspecting mutual TLS (`istioctl proxy-status`).
-- **argocd CLI** (`>= 2.10`): Useful for managing ArgoCD applications from the terminal.
+| Tool | Minimum Version | Verification Command | Notes |
+|---|---|---|---|
+| **AWS CLI** | `v2.x` | `aws --version` | Configured with Administrator or DevOps credentials |
+| **Terraform** | `>= 1.10.0` | `terraform -version` | Supports S3 native state locking (`use_lockfile = true`) |
+| **kubectl** | `>= 1.28.0` | `kubectl version --client` | Kubernetes CLI |
+| **Helm** | `>= 3.x` | `helm version` | Package manager for Kubernetes (ArgoCD installation) |
+| **ArgoCD CLI / Server** | `>= 2.9.0` | `argocd version` | Required for inline Kustomize replacements and patches |
+| **Git** | `>= 2.x` | `git --version` | Version control |
+| **GitHub CLI (`gh`)** | `>= 2.x` (Optional) | `gh --version` | Used to configure repository variables automatically |
 
 ---
 
-## Step 1: Clone Repositories
+## Step 1: Fork & Clone Repositories
 
-Clone both repositories side by side into the same parent directory. This relative directory structure is required by the setup scripts and deployment workflows:
+1. Fork both repositories on GitHub to your user account or organization (`<GITHUB_ORG>`):
+   - `https://github.com/<GITHUB_ORG>/online-boutique-app`
+   - `https://github.com/<GITHUB_ORG>/online-boutique-config`
 
-```bash
-mkdir -p online-boutique-workspace
-cd online-boutique-workspace
+2. Clone both repositories side by side into the same parent workspace directory:
+   ```bash
+   mkdir -p online-boutique-workspace
+   cd online-boutique-workspace
 
-# Replace <YOUR_GITHUB_ORG> with your GitHub organization or username
-git clone https://github.com/<YOUR_GITHUB_ORG>/online-boutique-app.git
-git clone https://github.com/<YOUR_GITHUB_ORG>/online-boutique-config.git
-```
+   git clone https://github.com/<GITHUB_ORG>/online-boutique-app.git
+   git clone https://github.com/<GITHUB_ORG>/online-boutique-config.git
+   ```
 
-Your directory structure must look like this:
-```
-online-boutique-workspace/
-├── online-boutique-app/
-└── online-boutique-config/
-```
+3. Confirm directory structure:
+   ```text
+   online-boutique-workspace/
+   ├── online-boutique-app/
+   └── online-boutique-config/
+   ```
 
 ---
 
-## Step 2: Configure GitHub Repository Variables
+## Step 2: Configure GitHub Repository Variables & Secrets
 
-Set up GitHub Actions repository variables in **both** repositories (`online-boutique-app` and `online-boutique-config`):
+All CI/CD workflows authenticate with AWS using **GitHub OIDC** (OpenID Connect), eliminating the need for long-lived AWS IAM access keys.
 
-1. Navigate to your repository on GitHub.
-2. Go to **Settings** → **Secrets and variables** → **Actions** → **Variables** tab.
-3. Click **New repository variable** and add the following:
+Navigate to your `online-boutique-app` repository on GitHub: **Settings** → **Secrets and variables** → **Actions**.
 
-| Variable | Description | Example |
-|---|---|---|
-| `AWS_ACCOUNT_ID` | Your 12-digit AWS Account ID | `123456789012` |
-| `AWS_REGION` | Target AWS region for infrastructure and ECR | `ap-southeast-1` |
-| `IAM_USERNAME` | Your IAM user name (used for EKS cluster admin access) | `admin-devops` |
+### Repository Variables
 
-> **Note:** To find your AWS Account ID, run:
+Add the following under the **Variables** tab:
+
+| Variable | Required? | Description | Example |
+|---|---|---|---|
+| `AWS_ACCOUNT_ID` | **Yes** | Your 12-digit AWS Account ID | `123456789012` |
+| `AWS_REGION` | **Yes** | Target AWS region for infrastructure and ECR | `ap-southeast-1` or `us-east-1` |
+| `IAM_USERNAME` | **Yes** | Your IAM user name for EKS cluster admin access | `devops-admin` |
+| `CONFIG_REPO_BRANCH` | Optional | Branch in `online-boutique-config` that CI updates with new image tags (defaults to `main`) | `deploy/dev` |
+
+> [!TIP]
+> Retrieve your 12-digit AWS Account ID using AWS CLI:
 > ```bash
 > aws sts get-caller-identity --query "Account" --output text
 > ```
 
----
+### Repository Secrets
 
-## Step 3: Configure GitHub Repository Secrets
+Add the following under the **Secrets** tab:
 
-Configure secrets required for automated CI/CD pipelines:
-
-1. In the `online-boutique-app` repository, go to **Settings** → **Secrets and variables** → **Actions** → **Secrets** tab.
-2. Click **New repository secret** and add the following:
-
-| Secret | Description | Required? |
+| Secret | Required? | Description |
 |---|---|---|
-| `CONFIG_REPO_TOKEN` | GitHub Personal Access Token (classic) with `repo` scope. Allows GitHub Actions in `online-boutique-app` to push updated image tags to `online-boutique-config`. | **Required** for CI GitOps trigger |
-| `SONAR_TOKEN` | SonarCloud project analysis token for static application security testing (SAST). | Optional |
+| `CONFIG_REPO_TOKEN` | **Yes** | GitHub Personal Access Token (classic) with `repo` scope. Allows CI workflows to push updated image tags to `online-boutique-config`. |
+| `SONAR_TOKEN` | Optional | SonarCloud project analysis token for static application security testing (SAST). If omitted, the SonarCloud job in CI automatically skips without failing the pipeline. |
 
-### Generating `CONFIG_REPO_TOKEN`:
-1. In GitHub, click your profile picture → **Settings** → **Developer Settings** → **Personal access tokens** → **Tokens (classic)**.
+#### Generating `CONFIG_REPO_TOKEN`:
+1. In GitHub, go to **Settings** → **Developer Settings** → **Personal Access Tokens** → **Tokens (classic)**.
 2. Click **Generate new token (classic)**.
-3. Name the token (e.g., `online-boutique-gitops-sync`).
-4. Select the `repo` scope (Full control of private repositories).
-5. Generate and copy the token into GitHub Repository Secrets as `CONFIG_REPO_TOKEN`.
+3. Set name to `online-boutique-gitops-sync`.
+4. Select scope: `repo` (Full control of private repositories).
+5. Copy the generated token and save as `CONFIG_REPO_TOKEN` under GitHub Actions Secrets.
+
+#### Optional SonarCloud SAST Configuration:
+If you use SonarCloud for code analysis:
+1. Open [sonar-project.properties](file:///d:/online-boutique/online-boutique-app/sonar-project.properties).
+2. Set `sonar.organization=<SONAR_ORG>` and `sonar.projectKey=<SONAR_PROJECT_KEY>`.
+3. Add `SONAR_TOKEN` to GitHub Secrets.
 
 ---
 
-## Step 4: Run Setup Script
+## Step 3: Run the Automated Setup Script
 
-The automated setup script scans both repositories and replaces all placeholder strings with your actual environment values.
+The automated setup script generates local gitignored configuration files and prepares the GitOps deployment branch without touching tracked files.
 
-### Execute the Script
+### What the Script Performs:
+1. **Generates gitignored `backend.hcl` files** for Terraform partial backend in:
+   - `terraform-aws/environments/dev/backend.hcl`
+   - `terraform-aws/environments/staging/backend.hcl`
+   - `terraform-aws/global/ecr/backend.hcl`
+   - `terraform-aws/global/github-oidc/backend.hcl`
+2. **Generates gitignored `terraform.tfvars`** in `terraform-aws/environments/<env>` from `terraform.tfvars.example`, substituting `<AWS_ACCOUNT_ID>`, `<IAM_USERNAME>`, and `<AWS_REGION>`.
+3. **Verifies via `git check-ignore`** that every generated file is strictly gitignored before proceeding, preventing accidental credential exposure.
+4. **Configures `online-boutique-config`**: Ensures branch `deploy/<env>` exists, switches to it, and writes `overlays/<env>/env.properties` with real `ECR_REGISTRY` and `REDIS_ADDR`. It refuses to write if currently on `main`.
+5. **Sets GitHub Repository Variables**: If `gh` CLI is installed and authenticated, offers to set the variables automatically.
 
-#### On Linux / macOS (Bash)
+### Running the Setup Script
+
+#### Option A: On Linux / macOS (Bash)
 ```bash
 cd online-boutique-app
 chmod +x scripts/setup.sh
+
+# Interactive mode:
+./scripts/setup.sh
+
+# Or non-interactive mode with environment variables:
+AWS_ACCOUNT_ID="<AWS_ACCOUNT_ID>" \
+AWS_REGION="<AWS_REGION>" \
+GITHUB_ORG="<GITHUB_ORG>" \
+IAM_USERNAME="<IAM_USERNAME>" \
 ./scripts/setup.sh
 ```
 
-#### On Windows (PowerShell)
+#### Option B: On Windows (PowerShell)
 ```powershell
 cd online-boutique-app
+
+# Interactive mode:
 .\scripts\setup.ps1
+
+# Or non-interactive mode:
+.\scripts\setup.ps1 -AwsAccountId "<AWS_ACCOUNT_ID>" -AwsRegion "<AWS_REGION>" -GithubOrg "<GITHUB_ORG>" -IamUsername "<IAM_USERNAME>"
 ```
-
-### Script Prompts & Inputs
-The script will interactively prompt you for the following inputs:
-- **AWS Account ID:** Your 12-digit AWS account ID.
-- **AWS Region:** AWS deployment region (defaults to `ap-southeast-1`).
-- **IAM Username:** Your IAM user name for EKS cluster administration.
-- **GitHub Organization/Username:** Your GitHub org or account hosting the repositories.
-- **GitHub Username for README attribution:** Defaults to your GitHub Org.
-- **Contact Email:** Author/maintainer contact email in README.
-- **EKS Cluster Names:**
-  - Dev cluster name (defaults to `online-boutique-dev`).
-  - Staging cluster name (defaults to `online-boutique-staging`).
-- **Redis Endpoint:** Private ElastiCache endpoint (press Enter to skip for later until provisioned).
-- **Grafana Admin Password:** Admin password for Grafana UI (defaults to `admin`).
-- **SonarCloud Organization & Project Key:** SonarCloud credentials (press Enter to skip if not using SonarCloud).
-
-The script outputs a summary of all modified files across both repositories.
 
 ---
 
-## Step 5: Set Up Terraform S3 Backend
+## Step 4: Step-by-Step Provisioning & Deployment Order
 
-Terraform stores its state file remotely in an Amazon S3 bucket with native locking enabled. Set up the backend infrastructure first:
+Provision AWS resources and deploy applications in the exact sequence below:
 
-1. Navigate to the S3 backend directory:
+```text
+S3 Backend Bootstrap ──► GitHub OIDC Provider ──► Global ECR Repositories ──► Dev Environment Infra ──► Install ArgoCD ──► Bootstrap Applications
+```
+
+### 1. Bootstrap Terraform S3 Backend
+The S3 backend uses AWS native state locking (`use_lockfile = true`) introduced in Terraform 1.10.
+
+1. Navigate to the backend bootstrap directory:
    ```bash
    cd terraform-aws/global/s3-backend
    ```
-
-2. Initialize and apply the module using local state to create the remote S3 bucket:
+2. Initialize and apply with local state to provision the remote S3 bucket:
    ```bash
    terraform init
-   terraform apply
+   terraform apply -auto-approve
    ```
-   *Note: This creates the S3 bucket `online-boutique-tfstate-<YOUR_AWS_ACCOUNT_ID>` with default AES256 KMS encryption, versioning, and public access blocks.*
+   *Creates S3 bucket: `online-boutique-tfstate-<AWS_ACCOUNT_ID>` with AES256 encryption, bucket versioning, and public access blocks.*
 
-3. Enable remote state migration:
+3. Migrate state to the new remote S3 backend:
    - Copy `backend.tf.example` to `backend.tf`:
      ```bash
      cp backend.tf.example backend.tf
      ```
-   - Verify that `<YOUR_AWS_ACCOUNT_ID>` has been replaced with your actual AWS Account ID (the setup script replaces this automatically).
-   - Re-initialize Terraform to migrate local state into the S3 bucket:
+   - Update `bucket = "online-boutique-tfstate-<AWS_ACCOUNT_ID>"` and `region = "<AWS_REGION>"` in `backend.tf`.
+   - Run state migration:
      ```bash
      terraform init -migrate-state
      ```
 
 ---
 
-## Step 6: Deploy Infrastructure
+### 2. Provision GitHub Actions OIDC Provider & Roles
+Provision IAM roles that allow GitHub Actions to securely authenticate via OIDC:
 
-With the S3 state backend operational, provision the global resources and the dev environment:
-
-### 1. Provision Global ECR Repositories
-```bash
-cd ../ecr
-terraform init
-terraform apply -auto-approve
-```
-
-### 2. Provision GitHub Actions OIDC Role
-Create the IAM role that allows GitHub Actions to assume an IAM role securely without long-lived AWS credentials:
 ```bash
 cd ../github-oidc
-terraform init
-terraform apply -auto-approve
+terraform init -backend-config=backend.hcl
+terraform apply -var "github_org=<GITHUB_ORG>" -auto-approve
 ```
+*Creates `online-boutique-github-ci` role and `online-boutique-github-terraform` role with trust policies restricted to `<GITHUB_ORG>/online-boutique-app`.*
 
-### 3. Deploy Dev Environment (VPC, EKS, ElastiCache)
+---
+
+### 3. Provision Global ECR Repositories
+Create private Amazon ECR repositories for all 11 microservices:
+
 ```bash
-cd ../../environments/dev
-
-# Copy example variables if terraform.tfvars does not exist
-if [ ! -f terraform.tfvars ]; then
-  cp terraform.tfvars.example terraform.tfvars
-fi
-
-terraform init
-terraform plan
-terraform apply
-```
-*Note: EKS cluster provisioning typically takes 12–18 minutes.*
-
-Once Terraform completes, take note of the ElastiCache Redis endpoint in the Terraform output. If you skipped this step during initial setup, update `overlays/dev/patches/cartservice-redis.yaml` in `online-boutique-config` with your Redis endpoint:
-```yaml
-- op: replace
-  path: /spec/template/spec/containers/0/env/0/value
-  value: "<YOUR_REDIS_ENDPOINT>:6379"
+cd ../ecr
+terraform init -backend-config=backend.hcl
+terraform apply -auto-approve
 ```
 
 ---
 
-## Step 7: Verify & Deploy Applications
+### 4. Deploy Dev Environment Infrastructure
+Deploy VPC networking, Amazon EKS cluster, and Amazon ElastiCache Redis:
 
-### 1. Configure Local kubectl
-Connect your local terminal to the newly provisioned Amazon EKS cluster:
 ```bash
-aws eks update-kubeconfig --region ap-southeast-1 --name online-boutique-dev
+cd ../../environments/dev
+terraform init -backend-config=backend.hcl
+terraform plan
+terraform apply
 ```
+*(EKS cluster and node group provisioning typically takes 12–18 minutes).*
 
-### 2. Verify Node Health
+Upon completion, note the Terraform outputs:
+- `cluster_name`: `online-boutique-dev`
+- `redis_connection_string`: Endpoint formatted as `<host>:<port>`
+
+> [!NOTE]
+> If you skipped providing `REDIS_ENDPOINT` during the setup script execution, update `overlays/dev/env.properties` in `online-boutique-config` now with the output from `redis_connection_string`:
+> ```properties
+> REDIS_ADDR=<REDIS_ENDPOINT>:6379
+> ```
+
+---
+
+### 5. Configure Local `kubectl` Access
+Authenticate your local Kubernetes CLI with the newly created Amazon EKS cluster:
+
 ```bash
+aws eks update-kubeconfig --region <AWS_REGION> --name online-boutique-dev
 kubectl get nodes -o wide
 ```
-Ensure all worker nodes report `Ready`.
+Verify that all worker nodes report `Ready`.
 
-### 3. Bootstrap GitOps with ArgoCD
-Apply the ArgoCD application manifests for the dev environment:
+---
+
+### 6. Install ArgoCD on the EKS Cluster
+Install ArgoCD using Helm and custom values:
+
 ```bash
-kubectl apply -f ../../../../online-boutique-config/argocd/apps/dev/
+helm repo add argo https://argoproj.github.io/argo-helm
+helm repo update
+
+# Install ArgoCD into the 'argocd' namespace
+helm install argocd argo/argo-cd \
+  --namespace argocd \
+  --create-namespace \
+  -f ../../../../online-boutique-config/argocd/install/values.yaml
 ```
 
-### 4. Monitor Application Rollout
-Verify that ArgoCD synchronizes all services into the `online-boutique` namespace:
+Wait until all ArgoCD pods are running:
+```bash
+kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=argocd-server -n argocd --timeout=300s
+```
+
+---
+
+### 7. Bootstrap ArgoCD Applications & Monitoring Stack
+Run the bootstrap script in `online-boutique-config` to initialize all services, Istio service mesh, and Prometheus/Grafana monitoring.
+
+The bootstrap script performs two vital operations:
+1. Prompts for `GRAFANA_ADMIN_PASSWORD` (or reads environment variable) and creates the Kubernetes Secret `grafana-admin` in namespace `monitoring`. **This password is never committed to Git.**
+2. Renders all ArgoCD Application definitions in `argocd/apps/dev/*.yaml` with your `<GITHUB_ORG>`, `<AWS_ACCOUNT_ID>`, `<AWS_REGION>`, and target revision (`deploy/dev`), applying them directly to the cluster without modifying tracked Git files.
+
+#### Run Bootstrap on Linux / macOS (Bash):
+```bash
+cd ../../../../online-boutique-config
+export GITHUB_ORG="<GITHUB_ORG>"
+export AWS_ACCOUNT_ID="<AWS_ACCOUNT_ID>"
+export AWS_REGION="<AWS_REGION>"
+
+# Optional: export GRAFANA_ADMIN_PASSWORD="YourSecurePassword"
+./scripts/bootstrap-argocd.sh dev
+```
+
+#### Run Bootstrap on Windows (PowerShell):
+```powershell
+cd ..\..\..\..\online-boutique-config
+$env:GITHUB_ORG = "<GITHUB_ORG>"
+$env:AWS_ACCOUNT_ID = "<AWS_ACCOUNT_ID>"
+$env:AWS_REGION = "<AWS_REGION>"
+
+# Optional: $env:GRAFANA_ADMIN_PASSWORD = "YourSecurePassword"
+.\scripts\bootstrap-argocd.ps1 -TargetEnv "dev"
+```
+
+---
+
+### 8. Commit and Push Configuration to `deploy/<env>`
+In `online-boutique-config`, commit and push your updated `overlays/dev/env.properties`:
+
+```bash
+cd online-boutique-config
+
+# Ensure you are on the deployment branch
+git checkout deploy/dev
+
+# Commit only overlays/dev/env.properties
+git add overlays/dev/env.properties
+git commit -m "chore: configure dev environment values"
+git push -u origin deploy/dev
+```
+
+> [!CAUTION]
+> Confirm before pushing:
+> ```bash
+> git branch --show-current
+> ```
+> Output must be `deploy/dev`. **Never merge `deploy/dev` back into `main`!**
+
+---
+
+## Step 5: Verification & Accessing Services
+
+### 1. Monitor ArgoCD Synchronization
+Check the sync status of all microservices and platform components:
 ```bash
 kubectl get applications -n argocd
 kubectl get pods -n online-boutique -w
 ```
 
-### 5. Access Dashboards & Public Storefront
+### 2. Access the Public Storefront
+Retrieve the external AWS Application Load Balancer / Istio Ingress Gateway URL:
 ```bash
-# Get external ALB / Istio Gateway URL
 kubectl get svc -n istio-system istio-ingressgateway -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+```
+Open the returned URL in your web browser to view the Online Boutique web storefront.
 
-# Access Grafana Dashboard (Credentials: admin / <GRAFANA_ADMIN_PASSWORD>)
+### 3. Access Monitoring & ArgoCD Dashboards
+```bash
+# Grafana (Credentials: admin / <GRAFANA_ADMIN_PASSWORD>)
 kubectl port-forward svc/grafana 3000:80 -n monitoring
 
-# Access ArgoCD Web UI
+# ArgoCD Web UI (Username: admin; default password retrieved via CLI)
 kubectl port-forward svc/argocd-server 8080:443 -n argocd
+```
+
+To retrieve the initial ArgoCD admin password:
+```bash
+kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}" | base64 -d
 ```
 
 ---
 
-## Placeholders Reference
+## How CI/CD & GitOps Automation Works
 
-The following table documents every placeholder used across both repositories, its purpose, and the files in which it appears:
-
-| Placeholder | Description | Used In |
-|---|---|---|
-| `<AWS_ACCOUNT_ID>` | 12-digit AWS Account ID | CI workflows (`ci-main.yml`, `ci-service.yml`, `terraform-*.yml`), Terraform (`environments/*/terraform.tfvars.example`), Kubernetes manifests (`base/online-boutique/*.yaml`), Kustomize overlays (`overlays/*/kustomization.yaml`), ArgoCD apps (`aws-lb-controller.yaml`, `cluster-autoscaler.yaml`), Kyverno policies (`verify-image-signature.yaml`), and documentation. |
-| `<YOUR_AWS_ACCOUNT_ID>` | Same 12-digit AWS Account ID | Terraform S3 backend config (`global/s3-backend/backend.tf.example`), IAM cluster admin ARN examples (`environments/*/terraform.tfvars.example`). |
-| `<AWS_REGION>` | AWS region for infrastructure | CI workflows, ArgoCD Helm values (`aws-lb-controller.yaml`, `cluster-autoscaler.yaml`), Kyverno image verification policies, README, and Runbooks. |
-| `<YOUR_IAM_USERNAME>` | IAM user name for cluster admin access | Terraform variables (`environments/*/terraform.tfvars.example`). |
-| `<GITHUB_ORG>` | GitHub organization or username | ArgoCD application repo URLs (`argocd/apps/*/*.yaml`), Kyverno Cosign subject verification policy, README badges and clone URLs. |
-| `<YOUR_GITHUB_ORG>` | Same as `GITHUB_ORG` | Terraform GitHub OIDC trust policy (`global/github-oidc/main.tf`), GitHub Code Owners (`.github/CODEOWNERS`). |
-| `<YOUR_GITHUB_USERNAME>` | GitHub username of repository maintainer | README author link and credits (`README.md`). |
-| `<YOUR_EMAIL>` | Maintainer contact email | README author contact (`README.md`). |
-| `<REDIS_ENDPOINT>` | AWS ElastiCache Redis primary endpoint | Config repo cartservice patch (`overlays/dev/patches/cartservice-redis.yaml`, `overlays/staging/patches/cartservice-redis.yaml`). |
-| `<GRAFANA_ADMIN_PASSWORD>` | Administrator password for Grafana UI | ArgoCD Helm values (`argocd/apps/dev/kube-prometheus-stack.yaml`), Prometheus stack values (`base/monitoring/prometheus-stack-values.yaml`). |
-| `<EKS_CLUSTER_NAME>` | EKS cluster identifier (e.g., `online-boutique-dev`) | ArgoCD Helm values (`aws-lb-controller.yaml`, `cluster-autoscaler.yaml`), README, and Runbooks. |
-| `<YOUR_SONAR_ORG>` | SonarCloud organization key | SonarCloud project configuration (`sonar-project.properties`). |
-| `<YOUR_SONAR_PROJECT_KEY>` | SonarCloud project unique key | SonarCloud project configuration (`sonar-project.properties`). |
+1. **Code Changes & Testing:** Developers commit and push service code to `online-boutique-app` (`main` branch or pull requests).
+2. **Automated CI Build & Push:** The [`ci-main.yml`](file:///d:/online-boutique/online-boutique-app/.github/workflows/ci-main.yml) orchestrator detects modified microservices, builds container images, executes unit tests and lint checks, and pushes tagged images to Amazon ECR.
+3. **Automated Manifest Update:** The [`update-manifests`](file:///d:/online-boutique/online-boutique-app/.github/actions/update-manifests/action.yml) composite action checks out `online-boutique-config` on the branch specified by `CONFIG_REPO_BRANCH` (`deploy/dev`), updates `newTag` for each updated image in `overlays/dev/kustomization.yaml`, and pushes the commit using `CONFIG_REPO_TOKEN`.
+4. **GitOps Rollout:** ArgoCD detects changes on `deploy/dev` and automatically performs a rolling update to the Amazon EKS cluster without manual intervention.
 
 ---
 
-## Troubleshooting & FAQ
+## Teardown & Resource Cleanup
 
-- **Setup script reports missing directory:**  
-  Make sure `online-boutique-app` and `online-boutique-config` are located in the same parent directory.
-- **GitOps image push fails in CI:**  
-  Check that the `CONFIG_REPO_TOKEN` secret has write access to `online-boutique-config` and that repository variable `AWS_ACCOUNT_ID` is set correctly.
-- **CartService fails to connect to cache:**  
-  Verify that `<REDIS_ENDPOINT>` in `overlays/dev/patches/cartservice-redis.yaml` matches the primary endpoint output by Terraform.
-- **Idempotency:**  
-  The setup script can be safely re-run if you change your configuration or clone fresh repositories.
+To completely destroy all cloud resources and avoid ongoing AWS charges, follow the comprehensive destruction sequence in:
+
+📖 **[Teardown & Destruction Guide](file:///d:/online-boutique/online-boutique-app/devops/destroy-guide.md)**
+
+Resources must be destroyed in strict reverse dependency order:
+1. Delete ArgoCD Applications and Kubernetes Ingress Load Balancers.
+2. Destroy Dev Environment Infrastructure (`terraform destroy` in `terraform-aws/environments/dev`).
+3. Destroy Global ECR Repositories and GitHub OIDC Roles.
+4. Destroy Terraform S3 State Backend.
+
+---
+
+## Standard Placeholders Reference
+
+The following table documents every standardized placeholder used throughout this project:
+
+| Placeholder | Description | Usage Context |
+|---|---|---|
+| `<AWS_ACCOUNT_ID>` | 12-digit AWS Account ID | ECR URLs, IAM ARNs, S3 backend bucket name, GitHub Variables |
+| `<AWS_REGION>` | Target AWS deployment region | Terraform configurations, ECR URLs, GitHub Variables |
+| `<GITHUB_ORG>` | GitHub username or organization | GitHub OIDC trust policy, repository URLs, clone paths |
+| `<IAM_USERNAME>` | AWS IAM username | EKS cluster administrator access in `terraform.tfvars` |
+| `<SONAR_ORG>` | SonarCloud organization key | SonarCloud static analysis config (`sonar-project.properties`) |
+| `<SONAR_PROJECT_KEY>` | SonarCloud project key | SonarCloud static analysis config (`sonar-project.properties`) |
+| `<REDIS_ENDPOINT>` | ElastiCache Redis primary endpoint | Private cache address in `overlays/<env>/env.properties` |
+| `<GRAFANA_ADMIN_PASSWORD>` | Password for Grafana `admin` user | Supplied securely at bootstrap; stored in Kubernetes Secret |

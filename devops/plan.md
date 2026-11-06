@@ -2,14 +2,14 @@
 
 ## Tổng Quan Dự Án
 
-Triển khai ứng dụng **Google Online Boutique** (12 microservices) lên hạ tầng AWS với quy trình DevOps hoàn chỉnh end-to-end.
+Triển khai ứng dụng **Google Online Boutique** (12 microservices ban đầu; thực tế triển khai 11 microservices do loại bỏ `shoppingassistantservice` phụ thuộc Google Cloud và thay `redis-cart` bằng ElastiCache Redis) lên hạ tầng AWS với quy trình DevOps hoàn chỉnh end-to-end.
 
 ### Cấu trúc Repositories
 
 ```
 online-boutique/
 ├── online-boutique-app/           # Source code + Infra (repo hiện tại)
-│   ├── src/                       # 12 microservices
+│   ├── src/                       # 11 microservices (gốc: 12 microservices)
 │   ├── terraform-aws/             # Terraform modules & environments
 │   ├── devops/                    # 📝 Documentation theo từng stage
 │   ├── .github/workflows/         # CI pipelines
@@ -700,6 +700,8 @@ graph TD
     J -->|Pass| K[✅ Staging Verified]
     J -->|HIGH Risk| L[⚠️ Review Required]
 ```
+
+> **Lưu ý thực tế triển khai:** Sơ đồ trên thể hiện thiết kế ban đầu (hard-block pipeline khi gặp CVE). Trong thực tế triển khai (xem chi tiết tại `devops/stage-6-devsecops.md §7.5`), các bước quét Trivy FS và Trivy Image sử dụng mức `⚠️ WARN` kèm `continue-on-error: true` và upload kết quả định dạng SARIF lên GitHub Security tab. Lý do: Online Boutique là ứng dụng demo chứa một số CVEs tồn đọng từ các thư viện upstream của Google chưa được vá, nếu hard-block sẽ cản trở hoàn toàn quy trình CI/CD.
 
 ### 6.4 Deliverables
 - [ ] Trivy filesystem scan (SCA) tích hợp trong CI
