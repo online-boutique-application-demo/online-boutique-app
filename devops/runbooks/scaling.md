@@ -1,8 +1,27 @@
 # 📈 Runbook: Hướng Dẫn Co Giãn Tài Nguyên (Scaling Guide)
 
 > **Dành cho:** Kỹ sư Vận hành (SRE) / DevOps Engineer phụ trách hệ thống Online Boutique trên AWS EKS.  
-> **Phạm vi áp dụng:** Cụm EKS `online-boutique-dev` (v1.36), khu vực `ap-southeast-1`, tài khoản AWS `798836978890`.  
+> **Phạm vi áp dụng:** Cụm EKS `<EKS_CLUSTER_NAME>` (v1.36), khu vực `<AWS_REGION>`, tài khoản AWS `<AWS_ACCOUNT_ID>`.  
 > **Mục tiêu:** Hướng dẫn quy trình co giãn tự động và thủ công ở cả 2 tầng: **Pod (HPA)** và **Node (Cluster Autoscaler)**, kết hợp tối ưu chi phí trên nền tảng **EC2 Spot Instances**.
+
+---
+
+### Thiết lập biến môi trường (Environment Variables)
+
+Trước khi thực thi các lệnh bên dưới, hãy thiết lập các biến môi trường tương ứng với phiên terminal của bạn:
+
+##### Linux / macOS (Bash):
+```bash
+export AWS_ACCOUNT_ID=<AWS_ACCOUNT_ID>
+export AWS_REGION=<AWS_REGION>
+export EKS_CLUSTER_NAME=online-boutique-dev
+export GITHUB_ORG=<GITHUB_ORG>
+```
+
+##### Windows (PowerShell):
+```powershell
+$env:AWS_ACCOUNT_ID = "<AWS_ACCOUNT_ID>"; $env:AWS_REGION = "<AWS_REGION>"; $env:EKS_CLUSTER_NAME = "online-boutique-dev"; $env:GITHUB_ORG = "<GITHUB_ORG>"
+```
 
 ---
 
@@ -120,11 +139,17 @@ spec:
 
 ### 1.4 Lệnh Quản Trị HPA Nhanh Bằng Kubectl
 
+> [!NOTE]
+> **Quy ước đặt tên HPA:**
+> - Khi dùng lệnh `kubectl autoscale deployment <name>`, Kubernetes tự động đặt tên tài nguyên HPA trùng với tên Deployment (ví dụ: `frontend`).
+> - Khi áp dụng qua tệp manifest YAML ở mục 1.3, tên tài nguyên HPA được định nghĩa là `frontend-hpa`.
+> Hãy chú ý tên HPA tương ứng với phương pháp bạn đã triển khai khi chạy lệnh `describe`.
+
 #### Tạo nhanh HPA bằng lệnh:
 
 ##### Trên Linux / macOS (Bash):
 ```bash
-# Tạo HPA cho frontend: min 2, max 10, ngưỡng CPU 70%
+# Tạo HPA cho frontend: min 2, max 10, ngưỡng CPU 70% (tên HPA sinh ra là 'frontend')
 kubectl autoscale deployment frontend -n online-boutique --cpu-percent=70 --min=2 --max=10
 
 # Tạo HPA cho checkoutservice: min 1, max 5, ngưỡng CPU 70%
@@ -136,7 +161,7 @@ kubectl autoscale deployment cartservice -n online-boutique --cpu-percent=70 --m
 
 ##### Trên Windows (PowerShell):
 ```powershell
-# Tạo HPA cho frontend: min 2, max 10, ngưỡng CPU 70%
+# Tạo HPA cho frontend: min 2, max 10, ngưỡng CPU 70% (tên HPA sinh ra là 'frontend')
 kubectl autoscale deployment frontend -n online-boutique --cpu-percent=70 --min=2 --max=10
 
 # Tạo HPA cho checkoutservice: min 1, max 5, ngưỡng CPU 70%
@@ -153,7 +178,10 @@ kubectl autoscale deployment cartservice -n online-boutique --cpu-percent=70 --m
 # Liệt kê tất cả HPA trong namespace online-boutique
 kubectl get hpa -n online-boutique
 
-# Xem chi tiết điều kiện kích hoạt và sự kiện scale của frontend
+# Xem chi tiết điều kiện kích hoạt và sự kiện scale của frontend:
+# - Nếu tạo qua kubectl autoscale (tên HPA là frontend):
+kubectl describe hpa frontend -n online-boutique
+# - Hoặc nếu tạo qua manifest YAML ở mục 1.3 (tên HPA là frontend-hpa):
 kubectl describe hpa frontend-hpa -n online-boutique
 ```
 
@@ -162,7 +190,10 @@ kubectl describe hpa frontend-hpa -n online-boutique
 # Liệt kê tất cả HPA trong namespace online-boutique
 kubectl get hpa -n online-boutique
 
-# Xem chi tiết điều kiện kích hoạt và sự kiện scale của frontend
+# Xem chi tiết điều kiện kích hoạt và sự kiện scale của frontend:
+# - Nếu tạo qua kubectl autoscale (tên HPA là frontend):
+kubectl describe hpa frontend -n online-boutique
+# - Hoặc nếu tạo qua manifest YAML ở mục 1.3 (tên HPA là frontend-hpa):
 kubectl describe hpa frontend-hpa -n online-boutique
 ```
 
@@ -171,7 +202,7 @@ kubectl describe hpa frontend-hpa -n online-boutique
 ## 2. Quản Trị Cluster Autoscaler
 
 ### 2.1 Cấu Hình Hiện Tại Cụm EKS Dev
-Cụm `online-boutique-dev` sử dụng AWS Managed Node Group với loại máy ảo **EC2 Spot `t3.medium`** (2 vCPU, 4 GiB Memory mỗi node).
+Cụm `<EKS_CLUSTER_NAME>` sử dụng AWS Managed Node Group với loại máy ảo **EC2 Spot `t3.medium`** (2 vCPU, 4 GiB Memory mỗi node).
 
 - **`node_min_size`:** `2` nodes (Mức sàn tiết kiệm chi phí ngoài giờ).
 - **`node_desired_size`:** `3` nodes (Mức thông thường đảm bảo chạy 11 microservices + Istio).
@@ -185,7 +216,7 @@ Cụm `online-boutique-dev` sử dụng AWS Managed Node Group với loại máy
 ### 2.2 Cơ Chế Tự Động Phát Hiện Qua AWS ASG Tags
 Cluster Autoscaler tự động nhận biết Auto Scaling Group nào thuộc quyền quản lý của nó thông qua 2 thẻ (tags) được Terraform tự động gán vào ASG:
 1. `k8s.io/cluster-autoscaler/enabled = true`
-2. `k8s.io/cluster-autoscaler/online-boutique-dev = owned`
+2. `k8s.io/cluster-autoscaler/<EKS_CLUSTER_NAME> = owned`
 
 Khi có Pod rơi vào trạng thái `Pending` với sự kiện `FailedScheduling` (Insufficient cpu / Insufficient memory), Cluster Autoscaler tính toán số lượng node cần thiết và gọi API của AWS EC2 Auto Scaling để tăng `DesiredCapacity`.
 
@@ -196,7 +227,7 @@ Khi có Pod rơi vào trạng thái `Pending` với sự kiện `FailedSchedulin
 Khi cần chuẩn bị cho đợt kiểm thử tải lớn (Stress Testing) hoặc khi số lượng workloads tăng, hãy nâng ngưỡng node thông qua Terraform:
 
 #### Bước 1: Điều chỉnh biến số cấu hình
-Mở tệp `terraform-aws/environments/dev/terraform.tfvars`:
+Mở tệp `terraform-aws/environments/dev/terraform.tfvars` (lưu ý: tệp này được sinh tự động bởi `scripts/setup.ps1` hoặc `setup.sh` từ `terraform.tfvars.example`):
 
 ```hcl
 node_desired_size = 4
@@ -208,9 +239,11 @@ node_max_size     = 8   # Nâng trần tối đa từ 5 lên 8 nodes
 
 ##### Trên Linux / macOS (Bash):
 ```bash
+# Chạy từ thư mục gốc của repo online-boutique-app
 cd terraform-aws/environments/dev
 
-# 1. Khởi tạo và kiểm tra kế hoạch thay đổi
+# 1. Khởi tạo backend S3 và kiểm tra kế hoạch thay đổi
+terraform init -backend-config=backend.hcl
 terraform plan -target=module.eks
 
 # 2. Áp dụng thay đổi cấu hình Node Group
@@ -219,9 +252,11 @@ terraform apply -target=module.eks -auto-approve
 
 ##### Trên Windows (PowerShell):
 ```powershell
-Set-Location -Path "d:\online-boutique\online-boutique-app\terraform-aws\environments\dev"
+# Chạy từ thư mục gốc của repo online-boutique-app
+Set-Location -Path "terraform-aws\environments\dev"
 
-# 1. Khởi tạo và kiểm tra kế hoạch thay đổi
+# 1. Khởi tạo backend S3 và kiểm tra kế hoạch thay đổi
+terraform init -backend-config=backend.hcl
 terraform plan -target=module.eks
 
 # 2. Áp dụng thay đổi cấu hình Node Group
@@ -241,7 +276,7 @@ kubectl logs -n kube-system -l app.kubernetes.io/name=aws-cluster-autoscaler -f 
 kubectl get cm cluster-autoscaler-status -n kube-system -o yaml
 
 # 3. Liệt kê danh sách các Nodes và nhãn vòng đời (Spot / On-Demand)
-kubectl get nodes -L node.kubernetes.io/instance-type,karpenter.sh/capacity-type,topology.kubernetes.io/zone
+kubectl get nodes -L node.kubernetes.io/instance-type,eks.amazonaws.com/capacityType,topology.kubernetes.io/zone
 ```
 
 ##### Trên Windows (PowerShell):
@@ -253,7 +288,7 @@ kubectl logs -n kube-system -l app.kubernetes.io/name=aws-cluster-autoscaler -f 
 kubectl get cm cluster-autoscaler-status -n kube-system -o yaml
 
 # 3. Liệt kê danh sách các Nodes và nhãn vòng đời (Spot / On-Demand)
-kubectl get nodes -L node.kubernetes.io/instance-type,karpenter.sh/capacity-type,topology.kubernetes.io/zone
+kubectl get nodes -L node.kubernetes.io/instance-type,eks.amazonaws.com/capacityType,topology.kubernetes.io/zone
 ```
 
 ---
@@ -305,7 +340,7 @@ kubectl scale deployment loadgenerator -n online-boutique --replicas=0
 Thực hiện thay đổi số lượng replica trực tiếp trong repository cấu hình:
 1. Mở file `online-boutique-config/base/online-boutique/<service>.yaml` (hoặc patch overlay dev).
 2. Sửa giá trị `spec.replicas: N`.
-3. Commit và push lên GitHub. ArgoCD sẽ phát hiện commit mới và đồng bộ an toàn 100%.
+3. Commit và push lên nhánh `deploy/dev` của repo `online-boutique-config`. ArgoCD sẽ phát hiện commit mới và đồng bộ an toàn 100%.
 
 #### Phương án 2: Can Thiệp Khẩn Cấp (Emergency Override)
 Nếu đang trong lúc sự cố cần scale gấp bằng `kubectl` mà không muốn ArgoCD tự revert:

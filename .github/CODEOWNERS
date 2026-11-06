@@ -1,11 +1,16 @@
 # See https://help.github.com/en/articles/about-code-owners
 # for more info about CODEOWNERS file.
+#
+# Note for forks:
+# Active rules below are commented out because placeholder team names cause syntax errors on GitHub.
+# After forking this repository, update the team or username (e.g. @<GITHUB_ORG>/maintainers or @your-org/maintainers)
+# and uncomment the rules you wish to enable.
 
 # Default owners for everything in the repo
-* @online-boutique-application-demo/maintainers
+# * @<GITHUB_ORG>/maintainers
 
 # Infrastructure (Terraform)
-terraform-aws/ @online-boutique-application-demo/maintainers
+# terraform-aws/ @<GITHUB_ORG>/maintainers
 
 # CI/CD Workflows
-.github/ @online-boutique-application-demo/maintainers
+# .github/ @<GITHUB_ORG>/maintainers

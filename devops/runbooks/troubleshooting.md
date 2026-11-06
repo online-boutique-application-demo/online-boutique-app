@@ -1,9 +1,28 @@
 # 🛠️ Runbook: Xử Lý Sự Cố Hệ Thống (Troubleshooting Guide)
 
 > **Dành cho:** Kỹ sư Vận hành (SRE) / DevOps Engineer phụ trách hệ thống Online Boutique trên AWS EKS.  
-> **Phạm vi áp dụng:** Cụm EKS `online-boutique-dev` (v1.36), khu vực `ap-southeast-1`, tài khoản AWS `798836978890`.  
+> **Phạm vi áp dụng:** Cụm EKS `<EKS_CLUSTER_NAME>` (v1.36), khu vực `<AWS_REGION>`, tài khoản AWS `<AWS_ACCOUNT_ID>`.  
 > **Quy chuẩn xử lý:** Mọi sự cố được phân tích theo chu trình chuẩn 5 bước:  
 > **Triệu chứng → Nguyên nhân → Lệnh chẩn đoán → Giải pháp → Phòng ngừa**.
+
+---
+
+### Thiết lập biến môi trường (Environment Variables)
+
+Trước khi thực thi các lệnh bên dưới, hãy thiết lập các biến môi trường tương ứng với phiên terminal của bạn:
+
+##### Linux / macOS (Bash):
+```bash
+export AWS_ACCOUNT_ID=<AWS_ACCOUNT_ID>
+export AWS_REGION=<AWS_REGION>
+export EKS_CLUSTER_NAME=online-boutique-dev
+export GITHUB_ORG=<GITHUB_ORG>
+```
+
+##### Windows (PowerShell):
+```powershell
+$env:AWS_ACCOUNT_ID = "<AWS_ACCOUNT_ID>"; $env:AWS_REGION = "<AWS_REGION>"; $env:EKS_CLUSTER_NAME = "online-boutique-dev"; $env:GITHUB_ORG = "<GITHUB_ORG>"
+```
 
 ---
 
@@ -63,8 +82,8 @@ kubectl get pods -n online-boutique --field-selector=status.phase!=Running
 # 2. Kiểm tra Exit Code và trạng thái container lần chạy trước
 kubectl describe pod <pod-name> -n online-boutique | grep -A 8 "Last State:"
 
-# 3. Đọc logs của container ứng dụng trước khi bị crash
-kubectl logs <pod-name> -n online-boutique -c main --previous --tail=50
+# 3. Đọc logs của container ứng dụng trước khi bị crash (10/11 microservices dùng container 'server'; riêng loadgenerator dùng '-c main')
+kubectl logs <pod-name> -n online-boutique -c server --previous --tail=50
 
 # 4. Đọc logs của Envoy sidecar nếu nghi ngờ lỗi mạng nội bộ
 kubectl logs <pod-name> -n online-boutique -c istio-proxy --previous --tail=30
@@ -78,8 +97,8 @@ kubectl get pods -n online-boutique | Where-Object { $_ -notmatch "Running" }
 # 2. Kiểm tra Exit Code và trạng thái container lần chạy trước
 kubectl describe pod <pod-name> -n online-boutique | Select-String -Pattern "Last State:" -Context 0,8
 
-# 3. Đọc logs của container ứng dụng trước khi bị crash
-kubectl logs <pod-name> -n online-boutique -c main --previous --tail=50
+# 3. Đọc logs của container ứng dụng trước khi bị crash (10/11 microservices dùng container 'server'; riêng loadgenerator dùng '-c main')
+kubectl logs <pod-name> -n online-boutique -c server --previous --tail=50
 
 # 4. Đọc logs của Envoy sidecar nếu nghi ngờ lỗi mạng nội bộ
 kubectl logs <pod-name> -n online-boutique -c istio-proxy --previous --tail=30
@@ -88,13 +107,13 @@ kubectl logs <pod-name> -n online-boutique -c istio-proxy --previous --tail=30
 #### Giải pháp:
 - **Nếu Exit Code 137 (OOMKilled):** Tăng memory limit trong manifest kustomize của service đó (ví dụ từ `128Mi` lên `256Mi` hoặc `512Mi`), sau đó commit lên repo `online-boutique-config`.
 - **Nếu lỗi `mustMapEnv` (Go panic):** Kiểm tra `base/online-boutique/<service>.yaml`. Đảm bảo các biến môi trường cấu hình địa chỉ gRPC đầy đủ giá trị. Lưu ý `SHOPPING_ASSISTANT_SERVICE_ADDR` phải luôn được khai báo dù service này bị tắt (`ENABLE_ASSISTANT=false`).
-- **Nếu lỗi ElastiCache connection (cartservice):** Kiểm tra ConfigMap hoặc Secret chứa endpoint Redis:
+- **Nếu lỗi ElastiCache connection (cartservice):** Lấy endpoint từ Terraform output:
   ```bash
-  # Lấy connection string từ Terraform output
+  # Lấy connection string từ Terraform output (đã bao gồm cổng :6379)
   cd terraform-aws/environments/dev
-  terraform output redis_connection_string
+  terraform output -raw redis_connection_string
   ```
-  Cập nhật lại giá trị vào overlay patch `overlays/dev/patches/cartservice-redis.yaml`.
+  Sau đó cập nhật giá trị `REDIS_ADDR=<endpoint>` trong file `overlays/dev/env.properties` trên nhánh `deploy/dev` của repo `online-boutique-config` (và kiểm tra `ECR_REGISTRY` trong cùng file nếu cần), commit & push lên `origin deploy/dev`. ArgoCD sẽ tự động đồng bộ giá trị cấu hình mới.
 
 #### Phòng ngừa:
 - Áp dụng Kyverno ClusterPolicy `require-resources` để bắt buộc mọi container đều có request/limit rõ ràng.
@@ -110,7 +129,7 @@ Pod ở trạng thái `ImagePullBackOff` hoặc `ErrImagePull`. Pod không thể
 #### Nguyên nhân phổ biến:
 1. **Tag image không tồn tại trên AWS ECR:** Pipeline CI chưa kịp hoàn tất việc push hoặc commit tag (`sha-<commit>`) bị sai khác giữa code repo và manifest GitOps repo.
 2. **Quyền IAM của EKS Node Group bị thiếu:** Worker node không thể authenticate với ECR Private Registry (thiếu quyền `ecr:GetAuthorizationToken` hoặc `ecr:BatchGetImage`).
-3. **Khai báo sai URI của ECR Repository:** Sai AWS Account ID (`798836978890`), sai region (`ap-southeast-1`), hoặc sai tên repository microservice.
+3. **Khai báo sai URI của ECR Repository:** Sai AWS Account ID (`<AWS_ACCOUNT_ID>`), sai region (`<AWS_REGION>`), hoặc sai tên repository microservice.
 4. **Kyverno chặn do vi phạm chữ ký Cosign:** Image chưa được ký hoặc chứng chỉ chữ ký không khớp với Root CA Sigstore/Fulcio.
 
 #### Lệnh chẩn đoán:
@@ -126,7 +145,7 @@ kubectl get pod <pod-name> -n online-boutique -o jsonpath='{.spec.containers[*].
 # 3. Kiểm tra xem image tag có thực sự tồn tại trên AWS ECR không
 aws ecr describe-images \
   --repository-name online-boutique/<service-name> \
-  --region ap-southeast-1 \
+  --region $AWS_REGION \
   --query 'imageDetails[*].imageTags' \
   --output table
 
@@ -145,7 +164,7 @@ kubectl get pod <pod-name> -n online-boutique -o jsonpath='{.spec.containers[*].
 # 3. Kiểm tra xem image tag có thực sự tồn tại trên AWS ECR không
 aws ecr describe-images `
   --repository-name online-boutique/<service-name> `
-  --region ap-southeast-1 `
+  --region $env:AWS_REGION `
   --query 'imageDetails[*].imageTags' `
   --output table
 
@@ -158,10 +177,11 @@ kubectl get policyreport -n online-boutique
 - **Nếu tag bị gõ nhầm:** Sửa trường `newTag` trong `online-boutique-config/overlays/dev/kustomization.yaml` khớp với SHA trên ECR:
   ```yaml
   images:
-    - name: 798836978890.dkr.ecr.ap-southeast-1.amazonaws.com/online-boutique/frontend
+    - name: REGISTRY/online-boutique/frontend
       newTag: sha-a1b2c3d
   ```
-- **Nếu lỗi xác thực IAM:** Kiểm tra role đính kèm vào EKS Node Group (`online-boutique-dev-eks-nodes-role`). Đảm bảo policy `AmazonEC2ContainerRegistryReadOnly` được attach.
+  *(Ghi chú: Nếu sai AWS Account ID hoặc Region trong URI của image, hãy kiểm tra và sửa biến `ECR_REGISTRY` trong file `overlays/dev/env.properties` trên nhánh `deploy/dev`)*.
+- **Nếu lỗi xác thực IAM:** Kiểm tra role đính kèm vào EKS Node Group (`<EKS_CLUSTER_NAME>-node-role`). Đảm bảo policy `AmazonEC2ContainerRegistryReadOnly` được attach.
 
 #### Phòng ngừa:
 - Quy trình CI tự động sử dụng composite action `update-manifests` commit trực tiếp image tag vừa build vào repository config, tránh chỉnh sửa thủ công.
@@ -394,8 +414,8 @@ kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controll
 kubectl get gateway,virtualservice -n online-boutique
 
 # 4. Kiểm tra sức khỏe của Target Group trên AWS qua AWS CLI
-TG_ARN=$(aws elbv2 describe-target-groups --region ap-southeast-1 --query "TargetGroups[?contains(TargetGroupName, 'istio')].TargetGroupArn" --output text)
-aws elbv2 describe-target-health --target-group-arn $TG_ARN --region ap-southeast-1
+TG_ARN=$(aws elbv2 describe-target-groups --region $AWS_REGION --query "TargetGroups[?contains(TargetGroupName, 'istio')].TargetGroupArn" --output text)
+aws elbv2 describe-target-health --target-group-arn $TG_ARN --region $AWS_REGION
 
 # 5. Kiểm tra kết nối trực tiếp vào Ingress Gateway pod từ bên trong cụm
 kubectl exec -n istio-system deployment/istio-ingressgateway -- curl -s -I http://localhost:8080/
@@ -413,8 +433,8 @@ kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controll
 kubectl get gateway,virtualservice -n online-boutique
 
 # 4. Kiểm tra sức khỏe của Target Group trên AWS qua AWS CLI
-$TG_ARN = (aws elbv2 describe-target-groups --region ap-southeast-1 --query "TargetGroups[?contains(TargetGroupName, 'istio')].TargetGroupArn" --output text)
-aws elbv2 describe-target-health --target-group-arn $TG_ARN --region ap-southeast-1
+$TG_ARN = (aws elbv2 describe-target-groups --region $env:AWS_REGION --query "TargetGroups[?contains(TargetGroupName, 'istio')].TargetGroupArn" --output text)
+aws elbv2 describe-target-health --target-group-arn $TG_ARN --region $env:AWS_REGION
 
 # 5. Thử kiểm tra curl tới DNS của Ingress Gateway
 $NLB_DNS = (kubectl get svc istio-ingressgateway -n istio-system -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
@@ -467,7 +487,7 @@ aws iam get-role --role-name online-boutique-github-ci --query 'Role.AssumeRoleP
 aws iam list-open-id-connect-providers
 
 # 3. Xem chi tiết thông số OpenID Connect Provider
-aws iam get-open-id-connect-provider --open-id-connect-provider-arn arn:aws:iam::798836978890:oidc-provider/token.actions.githubusercontent.com
+aws iam get-open-id-connect-provider --open-id-connect-provider-arn arn:aws:iam://${AWS_ACCOUNT_ID}:oidc-provider/token.actions.githubusercontent.com
 ```
 
 ##### Trên Windows (PowerShell):
@@ -479,7 +499,7 @@ aws iam get-role --role-name online-boutique-github-ci --query 'Role.AssumeRoleP
 aws iam list-open-id-connect-providers
 
 # 3. Xem chi tiết thông số OpenID Connect Provider
-aws iam get-open-id-connect-provider --open-id-connect-provider-arn arn:aws:iam::798836978890:oidc-provider/token.actions.githubusercontent.com
+aws iam get-open-id-connect-provider --open-id-connect-provider-arn "arn:aws:iam::$($env:AWS_ACCOUNT_ID):oidc-provider/token.actions.githubusercontent.com"
 ```
 
 #### Giải pháp:
@@ -500,8 +520,8 @@ Condition = {
 Áp dụng lại cấu hình Terraform:
 ```bash
 cd terraform-aws/global/github-oidc
-terraform init
-terraform apply -auto-approve
+terraform init -backend-config=backend.hcl
+terraform apply -var="github_org=$GITHUB_ORG" -auto-approve
 ```
 
 #### Phòng ngừa:
@@ -526,29 +546,29 @@ Bước `Push to ECR` trong GitHub Actions bị lỗi:
 ##### Trên Linux / macOS (Bash):
 ```bash
 # 1. Kiểm tra danh sách 11 ECR repositories hiện có
-aws ecr describe-repositories --region ap-southeast-1 --query 'repositories[*].repositoryName' --output table
+aws ecr describe-repositories --region $AWS_REGION --query 'repositories[*].repositoryName' --output table
 
 # 2. Thử nghiệm đăng nhập ECR thủ công bằng CLI
-aws ecr get-login-password --region ap-southeast-1 | docker login --username AWS --password-stdin 798836978890.dkr.ecr.ap-southeast-1.amazonaws.com
+aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
 
 # 3. Kiểm tra quyền IAM đính kèm vào role CI
-aws iam get-policy-version --policy-arn arn:aws:iam::798836978890:policy/online-boutique-github-ci --version-id v1
+aws iam get-policy-version --policy-arn arn:aws:iam://${AWS_ACCOUNT_ID}:policy/online-boutique-github-ci --version-id v1
 ```
 
 ##### Trên Windows (PowerShell):
 ```powershell
 # 1. Kiểm tra danh sách 11 ECR repositories hiện có
-aws ecr describe-repositories --region ap-southeast-1 --query 'repositories[*].repositoryName' --output table
+aws ecr describe-repositories --region $env:AWS_REGION --query 'repositories[*].repositoryName' --output table
 
 # 2. Thử nghiệm đăng nhập ECR thủ công bằng CLI
-(aws ecr get-login-password --region ap-southeast-1) | docker login --username AWS --password-stdin 798836978890.dkr.ecr.ap-southeast-1.amazonaws.com
+(aws ecr get-login-password --region $env:AWS_REGION) | docker login --username AWS --password-stdin "$($env:AWS_ACCOUNT_ID).dkr.ecr.$($env:AWS_REGION).amazonaws.com"
 
 # 3. Kiểm tra quyền IAM đính kèm vào role CI
-aws iam get-policy-version --policy-arn arn:aws:iam::798836978890:policy/online-boutique-github-ci --version-id v1
+aws iam get-policy-version --policy-arn "arn:aws:iam::$($env:AWS_ACCOUNT_ID):policy/online-boutique-github-ci" --version-id v1
 ```
 
 #### Giải pháp:
-- Nếu thiếu repository, di chuyển vào `terraform-aws/global/ecr`, cập nhật danh sách repository và chạy `terraform apply`.
+- Nếu thiếu repository, di chuyển vào `terraform-aws/global/ecr`, cập nhật danh sách repository, chạy `terraform init -backend-config=backend.hcl` và `terraform apply -var="aws_region=$AWS_REGION"`.
 - Đảm bảo workflow GitHub Actions luôn gọi action `aws-actions/amazon-ecr-login@v2` ngay trước bước `docker push`.
 
 #### Phòng ngừa:
@@ -580,8 +600,8 @@ argocd app diff online-boutique-dev
 # 3. Đọc logs của ArgoCD Application Controller
 kubectl logs -n argocd -l app.kubernetes.io/name=argocd-application-controller --tail=50
 
-# 4. Kiểm tra xem tệp Kustomize có build được ở local không
-kubectl kustomize <path-to-online-boutique-config>/overlays/dev
+# 4. Kiểm tra xem tệp Kustomize có build được ở local không (chạy từ thư mục gốc của repo online-boutique-app)
+kubectl kustomize ../online-boutique-config/overlays/dev
 ```
 
 ##### Trên Windows (PowerShell):
@@ -595,8 +615,8 @@ argocd app diff online-boutique-dev
 # 3. Đọc logs của ArgoCD Application Controller
 kubectl logs -n argocd -l app.kubernetes.io/name=argocd-application-controller --tail=50
 
-# 4. Kiểm tra xem tệp Kustomize có build được ở local không
-kubectl kustomize <path-to-online-boutique-config>\overlays\dev
+# 4. Kiểm tra xem tệp Kustomize có build được ở local không (chạy từ thư mục gốc của repo online-boutique-app)
+kubectl kustomize ..\online-boutique-config\overlays\dev
 ```
 
 #### Giải pháp:
@@ -616,7 +636,7 @@ kubectl kustomize <path-to-online-boutique-config>\overlays\dev
   ```
 
 #### Phòng ngừa:
-- Luôn kiểm tra tính hợp lệ bằng lệnh `kubectl kustomize <path>` trước khi commit lên nhánh `main`.
+- Luôn kiểm tra tính hợp lệ bằng lệnh `kubectl kustomize <path>` trước khi commit lên nhánh config (nhánh `deploy/dev` được ArgoCD theo dõi cho cụm live dev cluster).
 - Tuyệt đối tuân thủ nguyên tắc GitOps: Không sửa trực tiếp tài nguyên trên cụm bằng `kubectl edit` hay `kubectl apply`.
 
 ---
@@ -744,14 +764,14 @@ spec:
       mode: DISABLE
 ```
 
-Áp dụng lại manifest:
+Áp dụng lại manifest (chạy từ thư mục gốc của repo online-boutique-app):
 ```bash
-kubectl apply -f <path-to-online-boutique-config>/base/istio/otel-collector-destination-rule.yaml
+kubectl apply -f ../online-boutique-config/base/istio/otel-collector-destination-rule.yaml
 ```
 
 Đồng thời đảm bảo tài nguyên `Telemetry` cấu hình `randomSamplingPercentage: 100.00`:
 ```bash
-kubectl apply -f <path-to-online-boutique-config>/base/istio/telemetry.yaml
+kubectl apply -f ../online-boutique-config/base/istio/telemetry.yaml
 ```
 
 #### Phòng ngừa:
@@ -795,9 +815,9 @@ kubectl get pods -n online-boutique -l app=loadgenerator
 ```
 
 #### Giải pháp:
-- **Nếu thiếu Service alias:** Áp dụng tệp `base/monitoring/prometheus-service.yaml` để tạo alias chuyển tiếp cổng 80 vào cổng 9090 của Prometheus pod:
+- **Nếu thiếu Service alias:** Áp dụng tệp `base/monitoring/prometheus-service.yaml` để tạo alias chuyển tiếp cổng 80 vào cổng 9090 của Prometheus pod (chạy từ thư mục gốc của repo online-boutique-app):
   ```bash
-  kubectl apply -f <path-to-online-boutique-config>/base/monitoring/prometheus-service.yaml
+  kubectl apply -f ../online-boutique-config/base/monitoring/prometheus-service.yaml
   ```
 - **Nếu thiếu lưu lượng:** Kiểm tra và khởi động lại `loadgenerator`:
   ```bash
@@ -821,7 +841,7 @@ Kèm thông tin `Lock Info: ID: <lock-id>, Path: ..., Who: ..., Created: ...`.
 
 #### Nguyên nhân phổ biến:
 1. **Tiến trình Terraform trước đó bị tắt cưỡng bức:** Developer đóng terminal đột ngột hoặc GitHub Actions workflow bị hủy ngang khi Terraform đang ghi dữ liệu vào S3 backend.
-2. **Cơ chế native S3 lock (`use_lockfile = true`) chưa giải phóng:** File `.tflock` vẫn còn tồn tại trên S3 bucket `online-boutique-tfstate-798836978890`.
+2. **Cơ chế native S3 lock (`use_lockfile = true`) chưa giải phóng:** File `.tflock` vẫn còn tồn tại trên S3 bucket `online-boutique-tfstate-<AWS_ACCOUNT_ID>`.
 
 #### Lệnh chẩn đoán:
 
@@ -864,82 +884,183 @@ Chạy `terraform destroy` khi EKS cluster vẫn còn sống nhưng chưa dọn 
 ##### Trên Linux / macOS (Bash):
 ```bash
 # 1. Liệt kê các NLB/ALB còn sót lại trên AWS
-aws elbv2 describe-load-balancers --region ap-southeast-1 --query 'LoadBalancers[*].[LoadBalancerName,LoadBalancerArn]' --output table
+aws elbv2 describe-load-balancers --region $AWS_REGION --query 'LoadBalancers[*].[LoadBalancerName,LoadBalancerArn]' --output table
 
 # 2. Liệt kê các Classic ELB còn sót lại
-aws elb describe-load-balancers --region ap-southeast-1 --query 'LoadBalancerDescriptions[*].LoadBalancerName' --output table
+aws elb describe-load-balancers --region $AWS_REGION --query 'LoadBalancerDescriptions[*].LoadBalancerName' --output table
 
 # 3. Liệt kê các Security Groups do Kubernetes tự sinh gắn với VPC
-VPC_ID=$(aws ec2 describe-vpcs --region ap-southeast-1 --filters "Name=tag:Project,Values=online-boutique" --query "Vpcs[0].VpcId" --output text)
-aws ec2 describe-security-groups --region ap-southeast-1 --filters "Name=vpc-id,Values=$VPC_ID" "Name=group-name,Values=k8s-*" --query 'SecurityGroups[*].[GroupId,GroupName]' --output table
+VPC_ID=$(aws ec2 describe-vpcs --region $AWS_REGION --filters "Name=tag:Project,Values=online-boutique" --query "Vpcs[0].VpcId" --output text)
+aws ec2 describe-security-groups --region $AWS_REGION --filters "Name=vpc-id,Values=$VPC_ID" "Name=group-name,Values=k8s-*" --query 'SecurityGroups[*].[GroupId,GroupName]' --output table
 ```
 
 ##### Trên Windows (PowerShell):
 ```powershell
 # 1. Liệt kê các NLB/ALB còn sót lại trên AWS
-aws elbv2 describe-load-balancers --region ap-southeast-1 --query 'LoadBalancers[*].[LoadBalancerName,LoadBalancerArn]' --output table
+aws elbv2 describe-load-balancers --region $env:AWS_REGION --query 'LoadBalancers[*].[LoadBalancerName,LoadBalancerArn]' --output table
 
 # 2. Liệt kê các Classic ELB còn sót lại
-aws elb describe-load-balancers --region ap-southeast-1 --query 'LoadBalancerDescriptions[*].LoadBalancerName' --output table
+aws elb describe-load-balancers --region $env:AWS_REGION --query 'LoadBalancerDescriptions[*].LoadBalancerName' --output table
 
 # 3. Liệt kê các Security Groups do Kubernetes tự sinh gắn với VPC
-$VPC_ID = (aws ec2 describe-vpcs --region ap-southeast-1 --filters "Name=tag:Project,Values=online-boutique" --query "Vpcs[0].VpcId" --output text)
-aws ec2 describe-security-groups --region ap-southeast-1 --filters "Name=vpc-id,Values=$VPC_ID" "Name=group-name,Values=k8s-*" --query 'SecurityGroups[*].[GroupId,GroupName]' --output table
+$VPC_ID = (aws ec2 describe-vpcs --region $env:AWS_REGION --filters "Name=tag:Project,Values=online-boutique" --query "Vpcs[0].VpcId" --output text)
+aws ec2 describe-security-groups --region $env:AWS_REGION --filters "Name=vpc-id,Values=$VPC_ID" "Name=group-name,Values=k8s-*" --query 'SecurityGroups[*].[GroupId,GroupName]' --output table
 ```
 
 #### Giải pháp:
-Chạy script Python dọn dẹp khẩn cấp để xóa cưỡng bức toàn bộ tài nguyên mồ côi:
 
-##### Trên Windows (PowerShell) & Linux / macOS (Bash):
+> [!WARNING]
+> **CẢNH BÁO NGUY HIỂM:** Script dưới đây chỉ sử dụng trong tình huống khẩn cấp khi cụm EKS đã bị xóa trước nhưng Load Balancers / Security Groups mồ côi vẫn còn tồn tại trong VPC gây lỗi `DependencyViolation`.  
+> Script hoạt động ở chế độ **DRY-RUN** theo mặc định (chỉ liệt kê tài nguyên tìm thấy, KHÔNG xóa). Bắt buộc phải cung cấp đúng `CLUSTER_NAME` và `VPC_ID` để giới hạn phạm vi trong đúng VPC và chỉ chọn các tài nguyên mang tag `kubernetes.io/cluster/<CLUSTER_NAME>` hoặc `elbv2.k8s.aws/cluster`. Để thực sự xóa tài nguyên, cần truyền thêm đối số `--apply`.
+
+##### Lưu script vào file `cleanup_orphaned.py` hoặc chạy trực tiếp:
+
+```python
+import argparse
+import json
+import os
+import subprocess
+import sys
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Dọn dẹp an toàn tài nguyên K8s mồ côi (ELB, TG, SG) cho một cụm EKS cụ thể."
+    )
+    parser.add_argument("--cluster-name", required=True, help="Tên cụm EKS (ví dụ: online-boutique-dev)")
+    parser.add_argument("--vpc-id", required=True, help="ID của VPC (ví dụ: vpc-0123456789abcdef0)")
+    parser.add_argument("--region", default=os.environ.get("AWS_REGION", "ap-southeast-1"), help="AWS Region")
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        default=False,
+        help="Thực hiện xóa tài nguyên (mặc định là DRY-RUN chỉ in danh sách)",
+    )
+    args = parser.parse_args()
+
+    cluster_name = args.cluster_name
+    vpc_id = args.vpc_id
+    region = args.region
+    apply_mode = args.apply
+    cluster_tag = f"kubernetes.io/cluster/{cluster_name}"
+
+    mode_label = "THỰC THI XÓA (--apply)" if apply_mode else "DRY-RUN (Chỉ kiểm tra, không xóa)"
+    print(f"=== Bắt đầu quét tài nguyên mồ côi [{mode_label}] ===")
+    print(f"Cluster Name : {cluster_name}")
+    print(f"VPC ID       : {vpc_id}")
+    print(f"Region       : {region}\n")
+
+    # 1. Quét ELBv2 (Application / Network Load Balancers)
+    try:
+        cmd = ["aws", "elbv2", "describe-load-balancers", "--region", region, "--output", "json"]
+        out = subprocess.check_output(cmd)
+        lbs = json.loads(out).get("LoadBalancers", [])
+        for lb in lbs:
+            if lb.get("VpcId") != vpc_id:
+                continue
+            arn = lb["LoadBalancerArn"]
+            name = lb.get("LoadBalancerName", "")
+            t_cmd = ["aws", "elbv2", "describe-tags", "--resource-arns", arn, "--region", region, "--output", "json"]
+            t_out = json.loads(subprocess.check_output(t_cmd))
+            tags = {t["Key"]: t.get("Value") for desc in t_out.get("TagDescriptions", []) for t in desc.get("Tags", [])}
+            if cluster_tag in tags or tags.get("elbv2.k8s.aws/cluster") == cluster_name:
+                if apply_mode:
+                    print(f"[APPLY] Đang xóa ELBv2: {name} ({arn})")
+                    subprocess.call(["aws", "elbv2", "delete-load-balancer", "--load-balancer-arn", arn, "--region", region])
+                else:
+                    print(f"[DRY-RUN] Phát hiện ELBv2 sẽ bị xóa: {name} ({arn})")
+    except Exception as e:
+        print("Lỗi kiểm tra ELBv2:", e)
+
+    # 2. Quét Classic ELB
+    try:
+        cmd = ["aws", "elb", "describe-load-balancers", "--region", region, "--output", "json"]
+        out = subprocess.check_output(cmd)
+        lbs = json.loads(out).get("LoadBalancerDescriptions", [])
+        for lb in lbs:
+            if lb.get("VPCId") != vpc_id:
+                continue
+            name = lb.get("LoadBalancerName", "")
+            t_cmd = ["aws", "elb", "describe-tags", "--load-balancer-name", name, "--region", region, "--output", "json"]
+            t_out = json.loads(subprocess.check_output(t_cmd))
+            tags = {t["Key"]: t.get("Value") for desc in t_out.get("TagDescriptions", []) for t in desc.get("Tags", [])}
+            if cluster_tag in tags or tags.get("elbv2.k8s.aws/cluster") == cluster_name:
+                if apply_mode:
+                    print(f"[APPLY] Đang xóa Classic ELB: {name}")
+                    subprocess.call(["aws", "elb", "delete-load-balancer", "--load-balancer-name", name, "--region", region])
+                else:
+                    print(f"[DRY-RUN] Phát hiện Classic ELB sẽ bị xóa: {name}")
+    except Exception as e:
+        print("Lỗi kiểm tra Classic ELB:", e)
+
+    # 3. Quét Target Groups
+    try:
+        cmd = ["aws", "elbv2", "describe-target-groups", "--region", region, "--output", "json"]
+        out = subprocess.check_output(cmd)
+        tgs = json.loads(out).get("TargetGroups", [])
+        for tg in tgs:
+            if tg.get("VpcId") != vpc_id:
+                continue
+            arn = tg["TargetGroupArn"]
+            name = tg.get("TargetGroupName", "")
+            t_cmd = ["aws", "elbv2", "describe-tags", "--resource-arns", arn, "--region", region, "--output", "json"]
+            t_out = json.loads(subprocess.check_output(t_cmd))
+            tags = {t["Key"]: t.get("Value") for desc in t_out.get("TagDescriptions", []) for t in desc.get("Tags", [])}
+            if cluster_tag in tags or tags.get("elbv2.k8s.aws/cluster") == cluster_name:
+                if apply_mode:
+                    print(f"[APPLY] Đang xóa Target Group: {name} ({arn})")
+                    subprocess.call(["aws", "elbv2", "delete-target-group", "--target-group-arn", arn, "--region", region])
+                else:
+                    print(f"[DRY-RUN] Phát hiện Target Group sẽ bị xóa: {name} ({arn})")
+    except Exception as e:
+        print("Lỗi kiểm tra Target Group:", e)
+
+    # 4. Quét Security Groups k8s-*
+    try:
+        cmd = [
+            "aws", "ec2", "describe-security-groups",
+            "--region", region,
+            "--filters", f"Name=vpc-id,Values={vpc_id}", "Name=group-name,Values=k8s-*",
+            "--output", "json"
+        ]
+        out = subprocess.check_output(cmd)
+        sgs = json.loads(out).get("SecurityGroups", [])
+        for sg in sgs:
+            sg_id = sg["GroupId"]
+            sg_name = sg.get("GroupName", "")
+            tags = {t["Key"]: t.get("Value") for t in sg.get("Tags", [])}
+            if cluster_tag in tags or tags.get("elbv2.k8s.aws/cluster") == cluster_name:
+                if apply_mode:
+                    print(f"[APPLY] Đang xóa Security Group: {sg_name} ({sg_id})")
+                    subprocess.call(["aws", "ec2", "delete-security-group", "--group-id", sg_id, "--region", region])
+                else:
+                    print(f"[DRY-RUN] Phát hiện Security Group sẽ bị xóa: {sg_name} ({sg_id})")
+    except Exception as e:
+        print("Lỗi kiểm tra Security Group:", e)
+
+    print("\nHoàn tất quá trình quét!")
+
+if __name__ == "__main__":
+    main()
+```
+
+##### Cách thực thi:
+
+###### Linux / macOS (Bash):
 ```bash
-python -c "
-import subprocess, json
+# 1. Chạy ở chế độ DRY-RUN (an toàn, chỉ in danh sách tài nguyên phát hiện):
+python cleanup_orphaned.py --cluster-name $EKS_CLUSTER_NAME --vpc-id $VPC_ID --region $AWS_REGION
 
-region = 'ap-southeast-1'
+# 2. Sau khi xác nhận đúng danh sách, thực thi xóa thật bằng cờ --apply:
+python cleanup_orphaned.py --cluster-name $EKS_CLUSTER_NAME --vpc-id $VPC_ID --region $AWS_REGION --apply
+```
 
-# 1. Xoa NLB/ALB
-try:
-    cmd = ['aws', 'elbv2', 'describe-load-balancers', '--region', region, '--query', 'LoadBalancers[*].LoadBalancerArn', '--output', 'json']
-    arns = json.loads(subprocess.check_output(cmd))
-    for arn in arns:
-        print(f'Deleting ELBv2: {arn}')
-        subprocess.call(['aws', 'elbv2', 'delete-load-balancer', '--load-balancer-arn', arn, '--region', region])
-except Exception as e:
-    print('ELBv2 check error:', e)
+###### Windows (PowerShell):
+```powershell
+# 1. Chạy ở chế độ DRY-RUN (an toàn, chỉ in danh sách tài nguyên phát hiện):
+python cleanup_orphaned.py --cluster-name $env:EKS_CLUSTER_NAME --vpc-id $VPC_ID --region $env:AWS_REGION
 
-# 2. Xoa Classic ELB
-try:
-    cmd = ['aws', 'elb', 'describe-load-balancers', '--region', region, '--query', 'LoadBalancerDescriptions[*].LoadBalancerName', '--output', 'json']
-    names = json.loads(subprocess.check_output(cmd))
-    for name in names:
-        print(f'Deleting Classic ELB: {name}')
-        subprocess.call(['aws', 'elb', 'delete-load-balancer', '--load-balancer-name', name, '--region', region])
-except Exception as e:
-    print('Classic ELB check error:', e)
-
-# 3. Xoa Target Groups k8s
-try:
-    cmd = ['aws', 'elbv2', 'describe-target-groups', '--region', region, '--query', 'TargetGroups[*].[TargetGroupName,TargetGroupArn]', '--output', 'json']
-    tgs = json.loads(subprocess.check_output(cmd))
-    for name, arn in tgs:
-        if 'k8s-' in name:
-            print(f'Deleting TG: {name}')
-            subprocess.call(['aws', 'elbv2', 'delete-target-group', '--target-group-arn', arn, '--region', region])
-except Exception as e:
-    print('TG check error:', e)
-
-# 4. Xoa Security Groups k8s
-try:
-    cmd = ['aws', 'ec2', 'describe-security-groups', '--region', region, '--filters', 'Name=group-name,Values=k8s-*', '--query', 'SecurityGroups[*].GroupId', '--output', 'json']
-    sgs = json.loads(subprocess.check_output(cmd))
-    for sg in sgs:
-        print(f'Deleting SG: {sg}')
-        subprocess.call(['aws', 'ec2', 'delete-security-group', '--group-id', sg, '--region', region])
-except Exception as e:
-    print('SG check error:', e)
-
-print('Dọn dẹp tài nguyên mồ côi hoàn tất!')
-"
+# 2. Sau khi xác nhận đúng danh sách, thực thi xóa thật bằng cờ --apply:
+python cleanup_orphaned.py --cluster-name $env:EKS_CLUSTER_NAME --vpc-id $VPC_ID --region $env:AWS_REGION --apply
 ```
 
 Sau khi chạy xong, thực hiện lại lệnh `terraform destroy -auto-approve`.
@@ -953,7 +1074,7 @@ Sau khi chạy xong, thực hiện lại lệnh `terraform destroy -auto-approve
 
 #### Triệu chứng:
 Khi khởi tạo lại hạ tầng buổi sáng bằng `terraform apply`, tiến trình thất bại với lỗi:
-`ResourceAlreadyExistsException: The specified log group already exists: /aws/eks/online-boutique-dev/cluster`.
+`ResourceAlreadyExistsException: The specified log group already exists: /aws/eks/<EKS_CLUSTER_NAME>/cluster`.
 
 #### Nguyên nhân phổ biến:
 Khi EKS cluster kích hoạt tính năng Control Plane Logging (API Server, Audit, Authenticator...), AWS tự động tạo CloudWatch Log Group tương ứng. Mặc định khi EKS cluster bị xóa, AWS giữ lại log group này để bảo toàn dữ liệu nhật ký kiểm toán (Audit Trail) và không tự động xóa theo cluster.
@@ -963,8 +1084,8 @@ Khi EKS cluster kích hoạt tính năng Control Plane Logging (API Server, Audi
 ##### Trên Linux / macOS (Bash):
 ```bash
 aws logs describe-log-groups \
-  --log-group-name-prefix /aws/eks/online-boutique-dev \
-  --region ap-southeast-1 \
+  --log-group-name-prefix /aws/eks/$EKS_CLUSTER_NAME \
+  --region $AWS_REGION \
   --query 'logGroups[*].[logGroupName,storedBytes]' \
   --output table
 ```
@@ -972,8 +1093,8 @@ aws logs describe-log-groups \
 ##### Trên Windows (PowerShell):
 ```powershell
 aws logs describe-log-groups `
-  --log-group-name-prefix /aws/eks/online-boutique-dev `
-  --region ap-southeast-1 `
+  --log-group-name-prefix /aws/eks/$env:EKS_CLUSTER_NAME `
+  --region $env:AWS_REGION `
   --query 'logGroups[*].[logGroupName,storedBytes]' `
   --output table
 ```
@@ -981,11 +1102,18 @@ aws logs describe-log-groups `
 #### Giải pháp:
 Xóa Log Group bị kẹt trực tiếp bằng AWS CLI trước khi chạy lại `terraform apply`:
 
-##### Trên Linux / macOS (Bash) & Windows (PowerShell):
+##### Trên Linux / macOS (Bash):
 ```bash
 aws logs delete-log-group \
-  --log-group-name /aws/eks/online-boutique-dev/cluster \
-  --region ap-southeast-1
+  --log-group-name /aws/eks/$EKS_CLUSTER_NAME/cluster \
+  --region $AWS_REGION
+```
+
+##### Trên Windows (PowerShell):
+```powershell
+aws logs delete-log-group `
+  --log-group-name /aws/eks/$env:EKS_CLUSTER_NAME/cluster `
+  --region $env:AWS_REGION
 ```
 
 Sau khi xóa, chạy lại:

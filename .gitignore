@@ -14,7 +14,9 @@
 *.tfvars
 *.tfplan
 tfplan
+backend.hcl
 terraform-aws/global/s3-backend/backend.tf
+!*.example
 crash.log
 crash.*.log
 override.tf

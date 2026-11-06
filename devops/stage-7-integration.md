@@ -1,7 +1,7 @@
 # Stage 7: Tích Hợp, Kiểm Thử End-to-End & Tài Liệu Vận Hành
 
 > **Ngày hoàn thành:** 2026-11-01
-> **Trạng thái:** ✅ Hoàn thành
+> **Trạng thái:** ✅ Hoàn thành (có hạn chế – xem Known gaps)
 > **Branch:** `feature/stage-7-integration`
 
 ---
@@ -62,7 +62,7 @@ Stage 7 là giai đoạn **nghiệm thu kỹ thuật (Technical Acceptance)** �
 | Kyverno controllers running | ✅ 4/4 controllers (admission, background, cleanup, reports) |
 | 6 ClusterPolicies ready | ✅ disallow-latest-tag, disallow-privileged-containers, require-labels, require-probes, require-resource-limits, verify-image-signatures |
 | Privileged container blocked | ✅ `admission webhook denied: Privileged containers are not allowed` |
-| Image signature verification | ✅ Non-existent image blocked: `MANIFEST_UNKNOWN: Requested image not found` |
+| Image signature verification | ⚠️ Policy ở Audit mode; non-existent image bị webhook từ chối do lỗi fetch digest (MANIFEST_UNKNOWN), chưa enforce chặn unsigned image |
 
 ---
 
@@ -73,7 +73,7 @@ Stage 7 là giai đoạn **nghiệm thu kỹ thuật (Technical Acceptance)** �
 | # | Test Case | Kết quả | Ghi chú |
 |---|-----------|---------|---------|
 | 6 | Load Test & Autoscaling | ✅ PASS | Loadgenerator active 59K+ requests, 4 nodes, Cluster Autoscaler responsive |
-| 7 | ArgoCD Rollback | ✅ PASS | Kyverno blocked bad image at admission; git revert restored clean state |
+| 7 | ArgoCD Rollback | ✅ PASS | Kyverno webhook từ chối image tag không tồn tại (lỗi mutateDigest); git revert phục hồi trạng thái sạch |
 | 8 | Dev → Staging Promotion | ⏭️ SKIPPED | Staging chưa khởi tạo |
 | 9 | Circuit Breaker (Istio) | ✅ PASS | DestinationRule with outlierDetection configured and active |
 
@@ -95,12 +95,14 @@ Stage 7 là giai đoạn **nghiệm thu kỹ thuật (Technical Acceptance)** �
 |------|---------|
 | Push bad image tag (`sha-nonexistent`) | ✅ Committed & pushed to config repo |
 | ArgoCD detect drift | ✅ Status: OutOfSync, retrying sync |
-| Kyverno chặn deploy lỗi | ✅ `verify-image-signatures` blocked: `MANIFEST_UNKNOWN` |
+| Kyverno webhook từ chối deploy lỗi | ✅ Webhook error: mutateDigest failed (MANIFEST_UNKNOWN) |
 | Frontend không bị gián đoạn | ✅ Pod vẫn Running 2/2 với image cũ (defense-in-depth) |
 | Git revert & push | ✅ Reverted thành công, config repo restored |
 | Service recovered | ✅ HTTP 200, 157ms qua NLB |
 
-> **Phát hiện quan trọng:** Kyverno `verify-image-signatures` policy hoạt động như lớp phòng thủ bổ sung — chặn deploy lỗi **trước cả khi** pod bị ImagePullBackOff. Đây là minh chứng cho chiến lược defense-in-depth (Stage 6 + Stage 4 kết hợp).
+> **Làm rõ kỹ thuật về Kyverno & Image Verification:** Trong kịch bản kiểm thử trên, request deploy bị admission webhook của Kyverno từ chối vì Kyverno không thể resolve digest của image tag không tồn tại (`sha-nonexistent`) trong quá trình `mutateDigest` (lỗi registry trả về `MANIFEST_UNKNOWN`), **KHÔNG PHẢI** do policy thực thi chặn signature (vì policy `verify-image-signatures` đang được cấu hình ở chế độ **Audit**). Nếu deploy một image có thật nhưng chưa được ký, image đó sẽ **không** bị chặn trong chế độ Audit.
+> 
+> *Ghi chú cải tiến (Future work):* Để thực sự chặn các image chưa ký hoặc chữ ký không hợp lệ tại admission time, cần chuyển `validationFailureAction` của policy `verify-image-signatures` từ `Audit` sang `Enforce`. Dù vậy, kết quả rollback qua Git revert vẫn thành công (PASS) và khôi phục trạng thái hoạt động bình thường.
 
 #### Test Case 9 — Circuit Breaker (Istio DestinationRule)
 
@@ -201,7 +203,20 @@ graph TB
 | 6 | Strict mTLS chặn telemetry | 4,5 | Cần PeerAuthentication exceptions cho monitoring ports |
 | 7 | Trivy scan upstream Google CVEs | 6 | Dùng `continue-on-error: true` với Trivy cho demo app |
 | 8 | Spot instances interruption 2-phút notice | 1 | PodDisruptionBudget + multi-AZ spread |
-| 9 | Kyverno verify-image-signatures chặn deploy lỗi trước cả ImagePullBackOff | 7 | Defense-in-depth: admission webhook + Cosign signature = 2 lớp bảo vệ |
+| 9 | Kyverno admission webhook từ chối image tag không tồn tại | 7 | Webhook fetch digest thất bại (MANIFEST_UNKNOWN) trước khi tạo pod. Lưu ý: verify-image-signatures đang ở Audit mode; cần chuyển sang Enforce để chặn hoàn toàn unsigned image |
+
+### 5.4 Hạn chế đã biết / Known gaps
+
+Dự án ghi nhận trung thực các hạn chế kỹ thuật hiện tại và giải pháp dự kiến:
+
+| # | Hạn chế (Gap) | Hiện trạng | Kế hoạch hoàn thiện |
+|---|---------------|------------|---------------------|
+| 1 | **E2E full pipeline run** | ⏭️ SKIPPED – Đã kiểm chứng phân đoạn (piecewise) qua từng Stage 2–6 độc lập | Chạy một commit E2E duy nhất kích hoạt tự động từ CI → ECR → ArgoCD sync → Health check live |
+| 2 | **Dev → Staging promotion** | ⏭️ SKIPPED – Staging chưa được provision thực tế để tối ưu chi phí hạ tầng ephemeral | Khởi tạo môi trường Staging khi cần thẩm định pre-production và kiểm thử approval gate của ArgoCD |
+| 3 | **Kiali topology testing** | Đã cài đặt Kiali nhưng chưa kiểm thử chuyên sâu tách biệt cho toàn bộ service graph | Thiết lập kịch bản test riêng biệt kiểm tra tính chính xác của Service Graph và hiển thị mTLS trên Kiali |
+| 4 | **Notification channels cho Alerts** | Alertmanager rules đã nạp và phát hiện cảnh báo nhưng chưa bắn về channel thực tế | Tích hợp webhook thông báo tới Slack / Microsoft Teams / PagerDuty |
+| 5 | **Mô phỏng Spot Interruption** | Chưa kích hoạt sự kiện ngắt Spot thực tế trên các worker nodes t3.medium | Sử dụng AWS Fault Injection Simulator (FIS) hoặc gửi tín hiệu ngắt Spot để kiểm chứng tính bền vững của PDB |
+| 6 | **Kyverno verify-image-signatures ở Audit mode** | Webhook chỉ từ chối khi không resolve được digest (MANIFEST_UNKNOWN), chưa chặn unsigned image | Chuyển `validationFailureAction: Audit` sang `Enforce` sau khi hoàn thiện ký toàn bộ base images và tools |
 
 ---
 
@@ -231,7 +246,7 @@ graph TB
 | 13 | Loki có logs | ✅ PASS (2 log streams) |
 | 14 | Tempo có traces | ✅ PASS (20 traces) |
 | 15 | Grafana dashboards load | ✅ PASS (32 dashboards, 3 custom) |
-| 16 | Rollback thành công | ✅ PASS (Kyverno defense-in-depth) |
+| 16 | Rollback thành công | ✅ PASS (git revert phục hồi trạng thái sạch; Kyverno webhook từ chối image không tồn tại) |
 | 17 | Load test observable | ✅ PASS (59K+ requests, 4 nodes) |
 | 18 | Dev → Staging promotion | ⏭️ SKIPPED |
 
@@ -248,7 +263,7 @@ graph TB
 | ElastiCache Redis | ~$25 | cache.t3.micro |
 | NAT Gateway | ~$32 | + data processing |
 | S3 + ECR | ~$5 | Storage minimal |
-| **Tổng (24/7)** | **~$165–180** | |
+| **Tổng (24/7)** | **~$165–180** | Chi phí chạy liên tục 24/7 cả tháng |
 | **Tổng (ephemeral ~8h/ngày)** | **~$55–60** | Tiết kiệm ~67% |
 
 ### 7.2 Chiến lược tối ưu chi phí

@@ -37,9 +37,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  AWS_REGION: ap-southeast-1
-  AWS_ACCOUNT_ID: "798836978890"
-  ECR_REGISTRY: 798836978890.dkr.ecr.ap-southeast-1.amazonaws.com
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+  ECR_REGISTRY: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
 
 # ─────────────────────────────────────────────────────────────
 # JOB 1: Detect which services have changed
@@ -102,13 +102,21 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.any_service == 'true'
     runs-on: ubuntu-latest
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     steps:
+      - name: Check SonarCloud Token
+        if: env.SONAR_TOKEN == ''
+        run: echo "::notice::SONAR_TOKEN not set – skipping SonarCloud"
+
       - name: Checkout code
+        if: env.SONAR_TOKEN != ''
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: SonarCloud Scan
+        if: env.SONAR_TOKEN != ''
         uses: SonarSource/sonarqube-scan-action@v5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

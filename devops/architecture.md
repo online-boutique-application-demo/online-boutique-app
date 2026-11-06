@@ -8,7 +8,7 @@
 
 ## 1. Tổng Quan
 
-Online Boutique là ứng dụng e-commerce demo của Google Cloud gồm **12 microservices** được viết bằng nhiều ngôn ngữ khác nhau. Dự án này triển khai ứng dụng lên **AWS** với quy trình DevOps hoàn chỉnh, bao gồm Infrastructure as Code, CI/CD, Service Mesh, Monitoring và Security.
+Online Boutique là ứng dụng e-commerce demo của Google Cloud gồm **11 microservices** (triển khai trên AWS sau khi loại bỏ `shoppingassistantservice` phụ thuộc Google Cloud và thay thế `redis-cart` pod bằng AWS ElastiCache Redis) được viết bằng nhiều ngôn ngữ khác nhau. Dự án này triển khai ứng dụng lên **AWS** với quy trình DevOps hoàn chỉnh, bao gồm Infrastructure as Code, CI/CD, Service Mesh, Monitoring và Security.
 
 ### 1.1 Kiến Trúc Tổng Thể
 
@@ -21,7 +21,7 @@ graph TB
     subgraph "AWS Cloud"
         subgraph "VPC - 10.0.0.0/16"
             subgraph "Public Subnets"
-                ALB[AWS Application Load Balancer]
+                NLB["AWS Network Load Balancer (NLB)"]
                 NAT[NAT Gateway]
             end
 
@@ -71,7 +71,7 @@ graph TB
         GHA[GitHub Actions CI]
     end
 
-    USER --> ALB --> IGW --> FE
+    USER --> NLB --> IGW --> FE
     FE --> CHECKOUT & PRODUCT & CURRENCY & CART & REC & AD & SHIPPING
     CHECKOUT --> PAYMENT & SHIPPING & EMAIL & CART & CURRENCY & PRODUCT
     REC --> PRODUCT
@@ -97,11 +97,10 @@ graph LR
     CURRENCY["CurrencyService\n(Node.js :7000)"]
     PAYMENT["PaymentService\n(Node.js :50051)"]
     SHIPPING["ShippingService\n(Go :50051)"]
-    EMAIL["EmailService\n(Python :8080)"]
+    EMAIL["EmailService\n(Python :5000)"]
     CHECKOUT["CheckoutService\n(Go :5050)"]
     REC["RecommendationService\n(Python :8080)"]
     AD["AdService\n(Java :9555)"]
-    ASSIST["ShoppingAssistantService\n(Python :80)"]
     REDIS[(ElastiCache Redis)]
 
     FE -->|gRPC| CART
@@ -111,7 +110,6 @@ graph LR
     FE -->|gRPC| CHECKOUT
     FE -->|gRPC| REC
     FE -->|gRPC| AD
-    FE -->|gRPC| ASSIST
 
     CHECKOUT -->|gRPC| CART
     CHECKOUT -->|gRPC| PRODUCT
@@ -136,10 +134,9 @@ graph LR
 | **currencyservice** | Node.js | 7000 | gRPC | Chuyển đổi tiền tệ | Không |
 | **paymentservice** | Node.js | 50051 | gRPC | Xử lý thanh toán (mock) | Không |
 | **shippingservice** | Go | 50051 | gRPC | Tính phí vận chuyển | Không |
-| **emailservice** | Python | 8080 | gRPC | Gửi email xác nhận | Không |
+| **emailservice** | Python | 5000 (targetPort 8080) | gRPC | Gửi email xác nhận | Không |
 | **recommendationservice** | Python | 8080 | gRPC | Gợi ý sản phẩm | productcatalogservice |
 | **adservice** | Java | 9555 | gRPC | Hiển thị quảng cáo | Không |
-| **shoppingassistantservice** | Python | 80 | gRPC | Trợ lý mua sắm AI | Không |
 | **loadgenerator** | Python | — | HTTP | Tạo traffic giả lập | frontend |
 
 ---
@@ -177,7 +174,7 @@ graph TB
 
 | Tầng | CIDR Range | Mục đích | Internet Access |
 |------|-----------|----------|-----------------|
-| **Public** | `10.0.0.0/20` – `10.0.32.0/20` | ALB, NAT Gateway, Bastion | Inbound + Outbound |
+| **Public** | `10.0.0.0/20` – `10.0.32.0/20` | NLB, NAT Gateway, Bastion | Inbound + Outbound |
 | **Private** | `10.0.48.0/20` – `10.0.80.0/20` | EKS Worker Nodes | Outbound qua NAT |
 | **Database** | `10.0.96.0/20` – `10.0.128.0/20` | ElastiCache Redis | Không (isolated) |
 
@@ -299,7 +296,7 @@ sequenceDiagram
 ```mermaid
 graph LR
     subgraph "Ingress"
-        ALB[AWS ALB] --> IGW[Istio Ingress Gateway]
+        NLB["AWS NLB"] --> IGW[Istio Ingress Gateway]
     end
 
     subgraph "Service Mesh - mTLS"
@@ -448,7 +445,7 @@ graph LR
 | EC2 Spot (3x t3.medium) | ~$30 | ~$30 | ~$60 |
 | ElastiCache (2x cache.t3.micro) | ~$25 | ~$25 | ~$50 |
 | NAT Gateway | ~$33 | ~$33 | ~$66 |
-| ALB | ~$18 | ~$18 | ~$36 |
+| NLB | ~$18 | ~$18 | ~$36 |
 | S3 (state + locking) | < $1 | — | ~$1 |
 | CloudWatch Logs | ~$5 | ~$5 | ~$10 |
 | ECR | ~$2 | — | ~$2 |

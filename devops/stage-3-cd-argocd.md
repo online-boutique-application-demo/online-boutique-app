@@ -54,7 +54,7 @@ sequenceDiagram
 - **Dọn dẹp:** Xóa hoàn toàn Deployment và Service `redis-cart` trong base manifests.
 - **Cấu hình:** Sử dụng Kustomize patch (`overlays/dev/patches/cartservice-redis.yaml`) để tiêm endpoint ElastiCache từ Terraform output vào biến môi trường `REDIS_ADDR` của `cartservice`:
   ```
-  REDIS_ADDR = "online-boutique-dev.e9wc6a.ng.0001.apse1.cache.amazonaws.com:6379"
+  REDIS_ADDR = "<ELASTICACHE_ENDPOINT>:6379"  # Lấy từ terraform output redis_primary_endpoint
   ```
 - **Lợi ích:** Đảm bảo dữ liệu giỏ hàng được quản lý bởi dịch vụ Redis Multi-AZ tiêu chuẩn doanh nghiệp của AWS, không lo mất dữ liệu khi pod khởi động lại.
 
@@ -247,5 +247,5 @@ argocd app rollback online-boutique-dev 1
 | **Degraded** | Pod crashloop hoặc fail readiness probe | Chạy `kubectl describe pod -n online-boutique <pod>` và `kubectl logs <pod>`. |
 | **ImagePullBackOff** | ECR chưa có image tag hoặc quyền node pull ECR lỗi | Kiểm tra `aws ecr list-images --repository-name online-boutique/<service>`. Đảm bảo EKS Node Group có IAM role quyền `AmazonEC2ContainerRegistryReadOnly`. |
 | **Redis Connection Timeout** | Security Group chặn port 6379 giữa EKS nodes và ElastiCache | Kiểm tra Security Group của ElastiCache cho phép ingress TCP 6379 từ EKS Node SG. |
-| **FailedBuildModel (0 match VPC and tags: [kubernetes.io/role/elb])** | VPC ID trong Helm values của AWS Load Balancer Controller (`aws-lb-controller.yaml`) không đúng với VPC thực tế của EKS, hoặc public subnet thiếu tag | Sửa `vpcId` trong `argocd/apps/dev/aws-lb-controller.yaml` về đúng ID của VPC cụm EKS (ví dụ `vpc-0d45fceb8cf9ac238`), apply lại Application và kiểm tra public subnets có tag `kubernetes.io/role/elb: 1`. |
+| **FailedBuildModel (0 match VPC and tags: [kubernetes.io/role/elb])** | VPC ID trong Helm values của AWS Load Balancer Controller (`aws-lb-controller.yaml`) không đúng với VPC thực tế của EKS, hoặc public subnet thiếu tag | Sửa `vpcId` trong `argocd/apps/dev/aws-lb-controller.yaml` về đúng ID của VPC cụm EKS (ví dụ `<VPC_ID>` – lấy từ `terraform output vpc_id`), apply lại Application và kiểm tra public subnets có tag `kubernetes.io/role/elb: 1`. |
 

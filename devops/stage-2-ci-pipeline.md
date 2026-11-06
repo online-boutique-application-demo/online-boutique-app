@@ -129,7 +129,7 @@ ci-main.yml (Orchestrator)
 
 **ECR URI pattern:**
 ```
-798836978890.dkr.ecr.ap-southeast-1.amazonaws.com/online-boutique/<service>:<tag>
+<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/online-boutique/<service>:<tag>
 ```
 
 ## 5. AWS Authentication – OIDC (No Long-lived Keys)
@@ -146,11 +146,11 @@ token.actions.githubusercontent.com
     │ sts:AssumeRoleWithWebIdentity
     ▼
 AWS IAM Role: online-boutique-github-ci
-    (arn:aws:iam::798836978890:role/online-boutique-github-ci)
+    (arn:aws:iam::<AWS_ACCOUNT_ID>:role/online-boutique-github-ci)
 ```
 
 **IAM Role được cấu hình trong `terraform-aws/global/github-oidc/main.tf`:**
-- Chỉ cho phép repo `online-boutique-application-demo/online-boutique-app` assume role
+- Chỉ cho phép repo `<GITHUB_ORG>/online-boutique-app` assume role
 - Terraform role chỉ cho phép từ branch `main`
 - Permissions: ECR push, EKS describe
 

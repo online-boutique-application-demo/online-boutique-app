@@ -1,6 +1,6 @@
 # GitHub Actions Workflows
 
-Trang này mô tả các CI/CD workflows cho Online Boutique trên AWS, chạy trên [GitHub Actions](https://github.com/online-boutique-application-demo/online-boutique-app/actions).
+Trang này mô tả các CI/CD workflows cho Online Boutique trên AWS, chạy trên [GitHub Actions](https://github.com/<GITHUB_ORG>/online-boutique-app/actions).
 
 ## Infrastructure
 
@@ -19,7 +19,7 @@ Orchestrator workflow phát hiện service nào thay đổi (dùng `dorny/paths-
 3. Lint / format check
 4. Build Docker image (multi-stage, Buildx)
 5. Push to Amazon ECR (tags: `sha-<commit>`, `branch-<name>`, `latest`)
-6. Update image tag trong `online-boutique-config` repo (chỉ trên main)
+6. Update image tag trong `online-boutique-config` repo (chỉ khi push vào `main`, target branch: `CONFIG_REPO_BRANCH` hoặc `main`)
 
 **11 services** được build: tất cả trừ `shoppingassistantservice` (phụ thuộc Google Cloud APIs).
 
@@ -45,7 +45,7 @@ Orchestrator workflow phát hiện service nào thay đổi (dùng `dorny/paths-
 ### [`update-manifests`](../actions/update-manifests/action.yml)
 
 Composite action cập nhật image tag trong GitOps repo (`online-boutique-config`):
-- Checkout config repo
+- Checkout config repo (target branch cấu hình qua `CONFIG_REPO_BRANCH`, mặc định `main`)
 - Dùng `yq` để update `newTag` trong Kustomize overlays
 - Git commit + push
 
@@ -59,3 +59,17 @@ Tất cả workflows dùng **GitHub OIDC** để assume IAM roles:
 | `online-boutique-github-terraform` | Terraform: full infrastructure management |
 
 Không cần cấu hình AWS access keys trong GitHub Secrets.
+
+## Required Configuration
+
+Để các workflows hoạt động chính xác trên repository cá nhân hoặc fork, cần cấu hình các Variables và Secrets sau trên GitHub (`Settings > Secrets and variables > Actions`):
+
+### Variables
+- `AWS_ACCOUNT_ID`: AWS Account ID (12 chữ số) dùng cho ECR và OIDC role.
+- `AWS_REGION`: AWS Region triển khai (ví dụ: `us-east-1`, `ap-southeast-1`).
+- `IAM_USERNAME`: IAM username dùng cho cấu hình quyền truy cập.
+- `CONFIG_REPO_BRANCH` *(optional, default `main`)*: Branch đích trên repository `online-boutique-config` để cập nhật image tag (ví dụ: `deploy/dev`).
+
+### Secrets
+- `CONFIG_REPO_TOKEN`: GitHub Personal Access Token (PAT) hoặc GitHub App token có quyền write vào repository `online-boutique-config`.
+- `SONAR_TOKEN` *(optional)*: SonarCloud token để chạy phân tích SAST. Nếu không thiết lập, job SonarCloud sẽ tự động bỏ qua mà không làm fail pipeline.

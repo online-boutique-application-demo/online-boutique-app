@@ -38,9 +38,9 @@ on:
         default: true
 
 env:
-  AWS_REGION: ap-southeast-1
-  AWS_ACCOUNT_ID: "798836978890"
-  ECR_REGISTRY: 798836978890.dkr.ecr.ap-southeast-1.amazonaws.com
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+  ECR_REGISTRY: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
   ECR_REPO_PREFIX: online-boutique
 
 jobs:
@@ -346,8 +346,9 @@ jobs:
           service: ${{ inputs.service }}
           image_tag: ${{ steps.meta.outputs.primary_tag }}
           image_full: ${{ steps.meta.outputs.image_full }}
-          config_repo: online-boutique-application-demo/online-boutique-config
+          config_repo: ${{ github.repository_owner }}/online-boutique-config
           config_repo_token: ${{ secrets.CONFIG_REPO_TOKEN }}
+          config_repo_branch: ${{ vars.CONFIG_REPO_BRANCH || 'main' }}
 
       # ─────────────────────────────────────────
       # 10. Summary

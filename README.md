@@ -1,7 +1,7 @@
 # 🛍️ Online Boutique — DevOps End-to-End on AWS
 
-[![CI – Build & Push to ECR](https://github.com/online-boutique-application-demo/online-boutique-app/actions/workflows/ci-main.yml/badge.svg)](https://github.com/online-boutique-application-demo/online-boutique-app/actions/workflows/ci-main.yml)
-[![Security Scan](https://github.com/online-boutique-application-demo/online-boutique-app/actions/workflows/security-scan.yml/badge.svg)](https://github.com/online-boutique-application-demo/online-boutique-app/actions/workflows/security-scan.yml)
+[![CI – Build & Push to ECR](https://github.com/<GITHUB_ORG>/online-boutique-app/actions/workflows/ci-main.yml/badge.svg)](https://github.com/<GITHUB_ORG>/online-boutique-app/actions/workflows/ci-main.yml)
+[![Security Scan](https://github.com/<GITHUB_ORG>/online-boutique-app/actions/workflows/security-scan.yml/badge.svg)](https://github.com/<GITHUB_ORG>/online-boutique-app/actions/workflows/security-scan.yml)
 [![Amazon EKS](https://img.shields.io/badge/Amazon%20EKS-v1.36-FF9900?logo=amazon-aws&logoColor=white)](https://aws.amazon.com/eks/)
 [![Terraform](https://img.shields.io/badge/IaC-Terraform_v1.10+-7B42BC?logo=terraform&logoColor=white)](https://www.terraform.io/)
 [![ArgoCD](https://img.shields.io/badge/GitOps-ArgoCD-EF7B4D?logo=argo&logoColor=white)](https://argo-cd.readthedocs.io/)
@@ -15,7 +15,7 @@
 ## 🌟 Highlights
 
 - **11 Polyglot Microservices:** Distributed workload across Go, C# (.NET 8), Node.js, Python, and Java deployed on **Amazon EKS v1.36** utilizing cost-efficient **EC2 Spot Instances** (`t3.medium`) with automated fallback and cluster autoscaling (~70% compute savings).
-- **GitOps Continuous Delivery:** Dual-repository GitOps engine powered by **ArgoCD** and **Kustomize**, enforcing declarative infrastructure synchronization, drift detection, automatic rollouts for `dev`, and gate-controlled promotion for `staging`.
+- **GitOps Continuous Delivery:** Dual-repository GitOps engine powered by **ArgoCD** and **Kustomize**, enforcing declarative infrastructure synchronization, drift detection, automatic rollouts for `dev`, and gate-controlled promotion for `staging`. (Note: the config repo's `main` branch serves as a sanitized configuration template, while live cluster deployments track `deploy/dev` with environment values in `overlays/dev/env.properties`).
 - **High-Velocity CI Pipeline:** Automated **GitHub Actions** orchestration featuring matrix builds, change detection (`paths-filter`), passwordless **AWS OIDC authentication**, container packaging, and automated manifest patching.
 - **Zero-Trust Service Mesh:** **Istio** mesh enforcement with STRICT mutual TLS (`PeerAuthentication`), explicit least-privilege `AuthorizationPolicy` matrix (SPIFFE identities), and traffic resilience via `DestinationRule` circuit breakers and outlier ejection.
 - **Three Pillars of Observability:** Enterprise telemetry stack with **Prometheus** (metrics & custom alerting rules), **Grafana** (curated dashboards), **Grafana Loki** (log aggregation with Promtail), **Grafana Tempo** (distributed tracing via OpenTelemetry Collector), and **Kiali** (topology visualization).
@@ -26,7 +26,7 @@
 
 ## 🏛️ System Architecture
 
-The following diagram illustrates the complete infrastructure topology provisioned on AWS (`ap-southeast-1`, Account ID: `798836978890`):
+The following diagram illustrates the complete infrastructure topology provisioned on AWS (`<AWS_REGION>`, Account ID: `<AWS_ACCOUNT_ID>`):
 
 ```mermaid
 graph TB
@@ -34,10 +34,10 @@ graph TB
         USER[End Users]
     end
 
-    subgraph "AWS Cloud (Account: 798836978890 | ap-southeast-1)"
+    subgraph "AWS Cloud (Account: <AWS_ACCOUNT_ID> | <AWS_REGION>)"
         subgraph "VPC - 10.0.0.0/16"
             subgraph "Public Subnets"
-                ALB[AWS Network Load Balancer / ALB]
+                NLB[AWS Network Load Balancer (NLB)]
                 NAT[NAT Gateway]
             end
 
@@ -88,7 +88,7 @@ graph TB
         GHA[GitHub Actions CI]
     end
 
-    USER --> ALB --> IGW --> FE
+    USER --> NLB --> IGW --> FE
     LOAD --> IGW
     FE --> CHECKOUT & PRODUCT & CURRENCY & CART & REC & AD & SHIPPING
     CHECKOUT --> PAYMENT & SHIPPING & EMAIL & CART & CURRENCY & PRODUCT
@@ -115,7 +115,7 @@ Online Boutique is composed of **11 core microservices** collaborating via gRPC 
 | [currencyservice](src/currencyservice) | Node.js | `7000` | gRPC | Performs high-throughput foreign currency exchange calculations | None |
 | [paymentservice](src/paymentservice) | Node.js | `50051` | gRPC | Authorizes and charges payment cards (mock processing) | None |
 | [shippingservice](src/shippingservice) | Go | `50051` | gRPC | Computes shipping rates and assigns tracking identifiers | None |
-| [emailservice](src/emailservice) | Python | `8080` | gRPC | Generates order confirmation notifications | None |
+| [emailservice](src/emailservice) | Python | `5000` (targetPort `8080`) | gRPC | Generates order confirmation notifications | None |
 | [checkoutservice](src/checkoutservice) | Go | `5050` | gRPC | Coordinates order processing across billing, cart, and delivery | `cart`, `catalog`, `currency`, `payment`, `shipping`, `email` |
 | [recommendationservice](src/recommendationservice) | Python | `8080` | gRPC | Recommends relevant items based on cart contents | `productcatalogservice` |
 | [adservice](src/adservice) | Java | `9555` | gRPC | Returns contextual advertising banners | None |
@@ -154,7 +154,7 @@ online-boutique/
 │       ├── global/ (ecr, github-oidc)       # Shared registries and IAM trust roles
 │       └── modules/ (vpc, eks, irsa, etc.)  # Encapsulated AWS resource components
 │
-└── online-boutique-config/                   # GitOps Deployment State Repository
+└── online-boutique-config/                   # GitOps Deployment State Repository (main: template, deploy/dev: live cluster)
     ├── argocd/                              # ArgoCD Applications and Helm values
     │   ├── apps/dev/                        # Root application declarations for Dev
     │   └── apps/staging/                    # Promotion declarations for Staging
@@ -164,7 +164,7 @@ online-boutique/
     │   ├── monitoring/                      # Dashboards, PrometheusRules, and Helm values
     │   └── online-boutique/                 # 11 Microservice K8s deployments & services
     └── overlays/                            # Environment-specific Kustomize overlays
-        ├── dev/                             # Automated tag updates by CI pipeline
+        ├── dev/                             # Automated tag updates by CI (uses overlays/dev/env.properties on deploy/dev)
         └── staging/                         # Controlled pre-production configuration
 ```
 
@@ -180,7 +180,7 @@ sequenceDiagram
     actor Dev as Developer
     participant GH as GitHub (online-boutique-app)
     participant CI as GitHub Actions
-    participant ECR as AWS ECR (ap-southeast-1)
+    participant ECR as AWS ECR (<AWS_REGION>)
     participant Cfg as GitHub (online-boutique-config)
     participant Argo as ArgoCD (EKS)
     participant EKS as Amazon EKS Cluster
@@ -195,7 +195,7 @@ sequenceDiagram
     CI->>Cfg: Commit updated image tag to overlays/dev/kustomization.yaml
     Cfg-->>Argo: ArgoCD detects Git drift (webhook / 3m poll)
     Argo->>EKS: Apply declarative manifests (Kustomize render)
-    EKS->>ECR: Pull signed images & verify Kyverno policies
+    EKS->>ECR: Pull signed images & Kyverno audits admission policies
     EKS-->>Argo: Rolling update complete & pods Ready (2/2)
 ```
 
@@ -236,9 +236,9 @@ graph LR
 | **Source / PR** | **SonarCloud** | SAST | Analyzes code quality, maintainability, and CWE vulnerabilities |
 | **Build** | **Trivy (FS)** | SCA | Audits software bills of materials (SBOM) and open-source packages |
 | **Build** | **Hadolint** | Dockerfile Lint | Enforces non-root users, pinning, and clean layer creation |
-| **Packaging** | **Trivy (Image)** | Vulnerability Scan | Blocks high/critical CVEs in container base images |
+| **Packaging** | **Trivy (Image)** | Vulnerability Scan | Scans container images for CVEs (SARIF uploaded to Security tab; non-blocking in demo app) |
 | **Packaging** | **Cosign** | Provenance | Generates cryptographic signatures via OIDC identity tokens |
-| **Admission** | **Kyverno** | Policy Engine | Enforces read-only root filesystems and blocks privileged pods |
+| **Admission** | **Kyverno** | Policy Engine | Enforces read-only root filesystems, blocks privileged pods, and audits image signatures |
 | **Runtime** | **Istio** | Zero Trust | STRICT mTLS mutual authentication and SPIFFE RBAC authorization |
 | **Post-Deploy** | **OWASP ZAP** | DAST | Actively exercises ingress endpoints against OWASP Top 10 risks |
 
@@ -291,7 +291,7 @@ graph TD
 ## ⚡ Quick Start
 
 ### 1. Prerequisites
-- **AWS CLI v2** configured with Administrator permissions to account `798836978890`.
+- **AWS CLI v2** configured with Administrator permissions to account `<AWS_ACCOUNT_ID>`.
 - **Terraform** (`>= 1.10.0`)
 - **kubectl** (`>= 1.30.0`)
 - **Helm** (`>= 3.14.0`)
@@ -300,8 +300,8 @@ graph TD
 ### 2. Infrastructure Provisioning
 ```bash
 # Clone both repositories
-git clone https://github.com/online-boutique-application-demo/online-boutique-app.git
-git clone https://github.com/online-boutique-application-demo/online-boutique-config.git
+git clone https://github.com/<GITHUB_ORG>/online-boutique-app.git
+git clone https://github.com/<GITHUB_ORG>/online-boutique-config.git
 
 # Initialize and apply Terraform (Dev Environment)
 cd online-boutique-app/terraform-aws/environments/dev
@@ -309,7 +309,7 @@ terraform init
 terraform apply -auto-approve
 
 # Configure local kubectl context
-aws eks update-kubeconfig --region ap-southeast-1 --name online-boutique-dev
+aws eks update-kubeconfig --region <AWS_REGION> --name <EKS_CLUSTER_NAME>
 ```
 
 ### 3. ArgoCD & Application Bootstrap
@@ -382,7 +382,7 @@ Comprehensive guides, architectural decisions, and operational playbooks:
 | **Metrics Dashboard**     | Grafana | `v11.5.2` | Centralized multi-tenant visualization across metrics, logs, traces |
 | **Log Management**        | Grafana Loki / Promtail | `v2.9.3` | Cost-effective container log stream processing |
 | **Distributed Tracing**   | Grafana Tempo / OTel | `v1.18.2` / `0.176` | OpenTelemetry span ingestion and distributed query engine |
-| **Security Scanning**     | Trivy / Gitleaks | `v0.58` / `v8.18` | Vulnerability scanning (SCA/Image) and pre-commit secret hygiene |
+| **Security Scanning**     | Trivy / Gitleaks | `v0.58` / `v8.21.2` | Vulnerability scanning (SCA/Image) and pre-commit secret hygiene |
 | **Code Quality & SAST**   | SonarCloud / Hadolint | Latest | Static code defect scanning and Dockerfile lint validation |
 | **Cryptographic Signing** | Sigstore Cosign | `v2.4.0` | Keyless container signing verified via OIDC certificates |
 | **Policy Engine**         | Kyverno | `v1.13.0` | Kubernetes-native admission control and security context auditing |
@@ -392,7 +392,7 @@ Comprehensive guides, architectural decisions, and operational playbooks:
 
 ## 💰 Cost Estimation & Optimization
 
-Monthly estimated expenses configured for AWS Region `ap-southeast-1`:
+Monthly estimated expenses configured for AWS Region `<AWS_REGION>`:
 
 | Resource | Dev Environment | Staging Environment | Total Monthly |
 |----------|-----------------|---------------------|---------------|
@@ -400,7 +400,7 @@ Monthly estimated expenses configured for AWS Region `ap-southeast-1`:
 | **EC2 Spot Worker Nodes** (3x `t3.medium`) | ~$30.00 | ~$30.00 | ~$60.00 |
 | **AWS ElastiCache Redis** (2x `cache.t3.micro`) | ~$25.00 | ~$25.00 | ~$50.00 |
 | **Single NAT Gateway** | ~$33.00 | ~$33.00 | ~$66.00 |
-| **AWS Network Load Balancer / ALB** | ~$18.00 | ~$18.00 | ~$36.00 |
+| **AWS Network Load Balancer (NLB)** | ~$18.00 | ~$18.00 | ~$36.00 |
 | **Amazon CloudWatch Logs** | ~$5.00 | ~$5.00 | ~$10.00 |
 | **Amazon ECR & S3 State Storage** | ~$2.00 | — | ~$2.00 |
 | **Total Estimated Expense** | **~$186.00 / mo** | **~$184.00 / mo** | **~$370.00 / mo** |
@@ -413,4 +413,4 @@ Monthly estimated expenses configured for AWS Region `ap-southeast-1`:
 ## 👏 Acknowledgements & Credits
 
 - **Original Application:** The core application architecture is based on the [Google Cloud Microservices Demo (Online Boutique)](https://github.com/GoogleCloudPlatform/microservices-demo).
-- **DevOps Architecture & Implementation:** Re-architected and engineered for AWS by **[minhhuy27](https://github.com/minhhuy27)** (`dp1.2a4.minhhuy@gmail.com`).
+- **DevOps Architecture & Implementation:** Re-architected and engineered for AWS by **[<AUTHOR_NAME>](https://github.com/<AUTHOR_GITHUB_USERNAME>)**.

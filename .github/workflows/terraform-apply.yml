@@ -19,7 +19,7 @@ permissions:
   contents: read
 
 env:
-  AWS_REGION: ap-southeast-1
+  AWS_REGION: ${{ vars.AWS_REGION }}
   TF_VERSION: "1.10.5"
 
 jobs:
@@ -43,6 +43,7 @@ jobs:
             dev:
               - 'terraform-aws/environments/dev/**'
               - 'terraform-aws/modules/**'
+              - '.github/workflows/terraform-apply.yml'
             staging:
               - 'terraform-aws/environments/staging/**'
               - 'terraform-aws/modules/**'
@@ -67,10 +68,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Validate required GitHub variables
+        working-directory: .
+        env:
+          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          IAM_USERNAME: ${{ vars.IAM_USERNAME }}
+        run: |
+          FAILED=0
+          if [[ -z "$AWS_ACCOUNT_ID" || ! "$AWS_ACCOUNT_ID" =~ ^[0-9]{12}$ ]]; then
+            echo "::error::AWS_ACCOUNT_ID is missing or invalid (must match ^[0-9]{12}$)"
+            FAILED=1
+          fi
+          if [[ -z "$AWS_REGION" ]]; then
+            echo "::error::AWS_REGION is missing"
+            FAILED=1
+          fi
+          if [[ -z "$IAM_USERNAME" ]]; then
+            echo "::error::IAM_USERNAME is missing"
+            FAILED=1
+          fi
+          if [[ $FAILED -ne 0 ]]; then
+            exit 1
+          fi
+
       - name: Configure AWS credentials (OIDC – Terraform role)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::798836978890:role/online-boutique-github-terraform
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/online-boutique-github-terraform
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Setup Terraform
@@ -79,13 +104,21 @@ jobs:
           terraform_version: ${{ env.TF_VERSION }}
 
       - name: Terraform Init
-        run: terraform init -input=false
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=online-boutique-tfstate-${{ vars.AWS_ACCOUNT_ID }}" \
+            -backend-config="region=${{ vars.AWS_REGION }}"
 
       - name: Terraform Validate
         run: terraform validate -no-color
 
       - name: Terraform Plan
-        run: terraform plan -no-color -input=false -var-file=terraform.tfvars.example -out=tfplan
+        run: |
+          terraform plan -no-color -input=false \
+            -var-file=terraform.tfvars.example \
+            -var="aws_region=${{ vars.AWS_REGION }}" \
+            -var='cluster_admin_arns=["arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:user/${{ vars.IAM_USERNAME }}","arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/online-boutique-github-terraform"]' \
+            -out=tfplan
 
       - name: Terraform Apply
         run: terraform apply -auto-approve -input=false tfplan
@@ -113,10 +146,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Validate required GitHub variables
+        working-directory: .
+        env:
+          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          IAM_USERNAME: ${{ vars.IAM_USERNAME }}
+        run: |
+          FAILED=0
+          if [[ -z "$AWS_ACCOUNT_ID" || ! "$AWS_ACCOUNT_ID" =~ ^[0-9]{12}$ ]]; then
+            echo "::error::AWS_ACCOUNT_ID is missing or invalid (must match ^[0-9]{12}$)"
+            FAILED=1
+          fi
+          if [[ -z "$AWS_REGION" ]]; then
+            echo "::error::AWS_REGION is missing"
+            FAILED=1
+          fi
+          if [[ -z "$IAM_USERNAME" ]]; then
+            echo "::error::IAM_USERNAME is missing"
+            FAILED=1
+          fi
+          if [[ $FAILED -ne 0 ]]; then
+            exit 1
+          fi
+
       - name: Configure AWS credentials (OIDC – Terraform role)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::798836978890:role/online-boutique-github-terraform
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/online-boutique-github-terraform
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Setup Terraform
@@ -125,10 +182,18 @@ jobs:
           terraform_version: ${{ env.TF_VERSION }}
 
       - name: Terraform Init
-        run: terraform init -input=false
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=online-boutique-tfstate-${{ vars.AWS_ACCOUNT_ID }}" \
+            -backend-config="region=${{ vars.AWS_REGION }}"
 
       - name: Terraform Plan
-        run: terraform plan -no-color -input=false -var-file=terraform.tfvars.example -out=tfplan
+        run: |
+          terraform plan -no-color -input=false \
+            -var-file=terraform.tfvars.example \
+            -var="aws_region=${{ vars.AWS_REGION }}" \
+            -var='cluster_admin_arns=["arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:user/${{ vars.IAM_USERNAME }}","arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/online-boutique-github-terraform"]' \
+            -out=tfplan
 
       - name: Terraform Apply
         run: terraform apply -auto-approve -input=false tfplan
@@ -149,10 +214,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Validate required GitHub variables
+        working-directory: .
+        env:
+          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+        run: |
+          FAILED=0
+          if [[ -z "$AWS_ACCOUNT_ID" || ! "$AWS_ACCOUNT_ID" =~ ^[0-9]{12}$ ]]; then
+            echo "::error::AWS_ACCOUNT_ID is missing or invalid (must match ^[0-9]{12}$)"
+            FAILED=1
+          fi
+          if [[ -z "$AWS_REGION" ]]; then
+            echo "::error::AWS_REGION is missing"
+            FAILED=1
+          fi
+          if [[ $FAILED -ne 0 ]]; then
+            exit 1
+          fi
+
       - name: Configure AWS credentials (OIDC – Terraform role)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::798836978890:role/online-boutique-github-terraform
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/online-boutique-github-terraform
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Setup Terraform
@@ -161,10 +245,13 @@ jobs:
           terraform_version: ${{ env.TF_VERSION }}
 
       - name: Terraform Init
-        run: terraform init -input=false
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=online-boutique-tfstate-${{ vars.AWS_ACCOUNT_ID }}" \
+            -backend-config="region=${{ vars.AWS_REGION }}"
 
       - name: Terraform Apply
-        run: terraform apply -auto-approve -input=false
+        run: terraform apply -auto-approve -input=false -var="aws_region=${{ vars.AWS_REGION }}"
 
   # ─────────────────────────────────────────
   # Apply – Global GitHub OIDC
@@ -182,10 +269,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Validate required GitHub variables
+        working-directory: .
+        env:
+          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+        run: |
+          FAILED=0
+          if [[ -z "$AWS_ACCOUNT_ID" || ! "$AWS_ACCOUNT_ID" =~ ^[0-9]{12}$ ]]; then
+            echo "::error::AWS_ACCOUNT_ID is missing or invalid (must match ^[0-9]{12}$)"
+            FAILED=1
+          fi
+          if [[ -z "$AWS_REGION" ]]; then
+            echo "::error::AWS_REGION is missing"
+            FAILED=1
+          fi
+          if [[ $FAILED -ne 0 ]]; then
+            exit 1
+          fi
+
       - name: Configure AWS credentials (OIDC – Terraform role)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::798836978890:role/online-boutique-github-terraform
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/online-boutique-github-terraform
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Setup Terraform
@@ -194,7 +300,10 @@ jobs:
           terraform_version: ${{ env.TF_VERSION }}
 
       - name: Terraform Init
-        run: terraform init -input=false
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=online-boutique-tfstate-${{ vars.AWS_ACCOUNT_ID }}" \
+            -backend-config="region=${{ vars.AWS_REGION }}"
 
       - name: Terraform Apply
-        run: terraform apply -auto-approve -input=false
+        run: terraform apply -auto-approve -input=false -var="aws_region=${{ vars.AWS_REGION }}" -var="github_org=${{ github.repository_owner }}"
