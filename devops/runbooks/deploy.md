@@ -316,11 +316,145 @@ Sau khi merge PR vào `main`, workflow `.github/workflows/terraform-apply.yml` k
 
 ---
 
-## 4. Quy Trình Dựng Hạ Tầng Hàng Ngày (Daily Bootstrap Procedure)
+## 4. Quy Trình Dựng Hạ Tầng (Global Setup & Daily Bootstrap Procedure)
 
-Nhằm tối ưu chi phí trên AWS Cloud (tiết kiệm **~67% ngân sách**), toàn bộ cụm hạ tầng được tiêu hủy cuối ngày và dựng lại vào sáng ngày làm việc tiếp theo.
+Hạ tầng dự án được phân tách làm hai lớp độc lập với chu kỳ sống (lifecycle) khác biệt:
 
-### 4.1 Quy Trình Tuần Tự 6 Bước (Morning Bootstrap SOP)
+- **Hạ tầng Global (`terraform-aws/global/`):** Bao gồm `s3-backend`, `github-oidc`, và `ecr`. Lớp này chỉ cần khởi tạo **1 lần duy nhất** khi thiết lập dự án lần đầu trên tài khoản AWS mới. Cuối ngày **KHÔNG** xóa các module này để giữ lại Terraform remote state, cấu hình xác thực GitHub OIDC và các Docker images đã build trên ECR (chi phí duy trì gần như bằng $0).
+- **Hạ tầng Môi trường `dev` (`terraform-aws/environments/dev/`):** Bao gồm `VPC`, `NAT Gateway`, `EKS`, và `ElastiCache Redis`. Lớp này được tiêu hủy cuối ngày và dựng lại vào sáng hôm sau nhằm tối ưu chi phí trên AWS Cloud (tiết kiệm **~67% ngân sách**).
+
+---
+
+### 4.1 Khởi Tạo Hạ Tầng Global Lần Đầu Tiên (One-Time Setup Cho Người Dùng Mới)
+
+```mermaid
+flowchart LR
+    SETUP["Setup Script<br/>(setup.sh / setup.ps1)"] --> S3["1. global/s3-backend<br/>(Local State -> Migrate S3)"]
+    S3 --> OIDC["2. global/github-oidc<br/>(OIDC + IAM Roles)"]
+    OIDC --> ECR["3. global/ecr<br/>(11 ECR Repos)"]
+    ECR --> CI["4. Trigger CI Build Images"]
+    CI --> BOOTSTRAP["Chuyển sang Mục 4.2<br/>(Bootstrap Môi Trường Dev)"]
+```
+
+#### Bước 0.1: Chạy Script Thiết Lập Tự Động (`setup.sh` / `setup.ps1`)
+
+Script này sẽ tự động sinh các file gitignored (`backend.hcl` ở 4 thư mục Terraform, `terraform.tfvars` ở `environments/dev`) và tạo nhánh `deploy/dev` cùng file `overlays/dev/env.properties` bên repo `online-boutique-config`.
+
+##### Linux / macOS (Bash):
+```bash
+# Chạy từ thư mục gốc của repo online-boutique-app
+./scripts/setup.sh
+```
+
+##### Windows (PowerShell):
+```powershell
+# Chạy từ thư mục gốc của repo online-boutique-app
+.\scripts\setup.ps1
+```
+
+---
+
+#### Bước 0.2: Khởi tạo S3 State Backend (`terraform-aws/global/s3-backend` - Quy trình 2 pha)
+
+Module `s3-backend` sử dụng tính năng native state locking trên S3 (`use_lockfile = true`, Terraform >= 1.10) và được khởi tạo theo 2 pha:
+
+- **Pha 1: Tạo S3 bucket `online-boutique-tfstate-$AWS_ACCOUNT_ID` với local state:**
+
+##### Linux / macOS (Bash):
+```bash
+# Chạy từ thư mục gốc của repo online-boutique-app
+cd terraform-aws/global/s3-backend
+terraform init
+terraform apply -var="aws_region=$AWS_REGION" -auto-approve
+```
+
+##### Windows (PowerShell):
+```powershell
+# Chạy từ thư mục gốc của repo online-boutique-app
+Set-Location -Path "terraform-aws\global\s3-backend"
+terraform init
+terraform apply -var="aws_region=$env:AWS_REGION" -auto-approve
+```
+
+- **Pha 2: Tạo file `backend.tf` từ `backend.tf.example` (thay `<AWS_ACCOUNT_ID>` và `<AWS_REGION>`) và di chuyển (migrate) state từ local lên S3:**
+
+##### Linux / macOS (Bash):
+```bash
+sed -e "s/<AWS_ACCOUNT_ID>/${AWS_ACCOUNT_ID}/g" \
+    -e "s/<AWS_REGION>/${AWS_REGION}/g" \
+    backend.tf.example > backend.tf
+terraform init -migrate-state -force-copy
+cd ../../..
+```
+
+##### Windows (PowerShell):
+```powershell
+(Get-Content -Raw -Path "backend.tf.example").Replace('<AWS_ACCOUNT_ID>', $env:AWS_ACCOUNT_ID).Replace('<AWS_REGION>', $env:AWS_REGION) | Set-Content -Path "backend.tf" -Encoding UTF8
+terraform init -migrate-state -force-copy
+Set-Location -Path "..\..\.."
+```
+
+---
+
+#### Bước 0.3: Khởi tạo GitHub Actions OIDC Provider & IAM Roles (`terraform-aws/global/github-oidc`)
+
+Tạo OpenID Connect (OIDC) Provider và 2 IAM Roles chuyên dụng (`online-boutique-github-ci` cho CI/CD pipeline và `online-boutique-github-terraform` cho Terraform automation) để GitHub Actions xác thực trực tiếp với AWS mà không cần hardcode AWS Access Keys:
+
+##### Linux / macOS (Bash):
+```bash
+# Chạy từ thư mục gốc của repo online-boutique-app
+cd terraform-aws/global/github-oidc
+terraform init -backend-config=backend.hcl
+terraform apply -var="aws_region=$AWS_REGION" -var="github_org=$GITHUB_ORG" -auto-approve
+cd ../../..
+```
+
+##### Windows (PowerShell):
+```powershell
+# Chạy từ thư mục gốc của repo online-boutique-app
+Set-Location -Path "terraform-aws\global\github-oidc"
+terraform init -backend-config=backend.hcl
+terraform apply -var="aws_region=$env:AWS_REGION" -var="github_org=$env:GITHUB_ORG" -auto-approve
+Set-Location -Path "..\..\.."
+```
+
+---
+
+#### Bước 0.4: Khởi tạo Global Amazon ECR Repositories (`terraform-aws/global/ecr`)
+
+Tạo 11 ECR repositories cho 11 microservices:
+
+##### Linux / macOS (Bash):
+```bash
+# Chạy từ thư mục gốc của repo online-boutique-app
+cd terraform-aws/global/ecr
+terraform init -backend-config=backend.hcl
+terraform apply -var="aws_region=$AWS_REGION" -auto-approve
+cd ../../..
+```
+
+##### Windows (PowerShell):
+```powershell
+# Chạy từ thư mục gốc của repo online-boutique-app
+Set-Location -Path "terraform-aws\global\ecr"
+terraform init -backend-config=backend.hcl
+terraform apply -var="aws_region=$env:AWS_REGION" -var="project_name=online-boutique" -auto-approve
+Set-Location -Path "..\..\.."
+```
+
+---
+
+#### Bước 0.5: Build & Push 11 Container Images lần đầu lên ECR (Dành cho người dùng mới)
+
+> [!IMPORTANT]
+> Sau Bước 0.4, 11 ECR repositories mới được tạo sẽ **đang trống (chưa có image)**. Trước khi triển khai Pods lên EKS ở Mục 4.2, người dùng mới cần:
+> 1. Đảm bảo đã push nhánh `deploy/dev` của `online-boutique-config` lên GitHub (`git push -u origin deploy/dev`).
+> 2. Đã cấu hình GitHub Repository Variables (`AWS_ACCOUNT_ID`, `AWS_REGION`, `IAM_USERNAME`, `CONFIG_REPO_BRANCH=deploy/dev`) và Secret `CONFIG_REPO_TOKEN` trên repo `online-boutique-app`.
+> 3. Kích hoạt CI pipeline (`ci-main.yml`) trên nhánh `main` để tự động build, ký Cosign, push cả 11 microservice images lên ECR và tự động cập nhật tag `newTag` vào `overlays/dev/kustomization.yaml` trên nhánh `deploy/dev`.
+
+---
+
+### 4.2 Quy Trình Dựng Hạ Tầng Môi Trường Dev Hàng Ngày (Daily Bootstrap SOP - 6 Bước)
 
 ```mermaid
 flowchart TD
@@ -337,10 +471,10 @@ flowchart TD
 
 ---
 
-### 4.2 Lệnh Triển Khai Chi Tiết Từng Bước
+### 4.3 Lệnh Triển Khai Chi Tiết Từng Bước (Môi Trường Dev)
 
 > [!NOTE]
-> **Điều kiện tiên quyết (Chạy 1 lần đầu tiên):** Nếu chưa có các file cấu hình cục bộ (`backend.hcl`, `terraform.tfvars` - đã được gitignore) và nhánh `deploy/dev` bên repo `online-boutique-config`, hãy chạy `./scripts/setup.sh` (Bash) hoặc `.\scripts\setup.ps1` (PowerShell) từ thư mục gốc `online-boutique-app` trước khi bắt đầu Bước 1.
+> **Điều kiện tiên quyết:** Nếu là người dùng mới thiết lập dự án lần đầu, đảm bảo đã hoàn tất các bước ở **Mục 4.1**. Nếu đã có hạ tầng Global và các file cấu hình cục bộ (`backend.hcl`, `terraform.tfvars`), tiến hành thực thi 6 bước bên dưới theo tuần tự.
 
 #### Bước 1: Khởi tạo nền tảng hạ tầng AWS bằng Terraform
 
@@ -574,14 +708,16 @@ kubectl rollout status deployment/frontend -n online-boutique --timeout=120s
 
 ---
 
-## 5. Quy Trình Tiêu Hủy Hạ Tầng Cuối Ngày (Daily Teardown Procedure)
+## 5. Quy Trình Tiêu Hủy Hạ Tầng (Teardown Procedure)
+
+### 5.1 Tiêu Hủy Hạ Tầng Môi Trường Dev Cuối Ngày (Daily Teardown - Giữ lại Global)
 
 > [!CAUTION]
 > **QUY TẮC SỐNG CÒN:** Tuyệt đối **KHÔNG ĐƯỢC** chạy `terraform destroy` ngay lập tức!  
 > Phải xóa các tài nguyên Load Balancer (NLB, ELB) và Persistent Volume Claims (EBS gp2) trên Kubernetes **trước** khi xóa cụm EKS. Nếu xóa cụm EKS trước, AWS sẽ không thể giải phóng các ENI và Subnets, dẫn tới lỗi kẹt `DependencyViolation` kéo dài 30 phút.  
 > Chi tiết toàn diện tham khảo tại: [`devops/destroy-guide.md`](../destroy-guide.md).
 
-### Tóm tắt lệnh Teardown nhanh cuối ngày:
+#### Tóm tắt lệnh Teardown nhanh cuối ngày:
 
 ##### Linux / macOS (Bash):
 ```bash
@@ -645,6 +781,140 @@ aws elb describe-load-balancers --region $env:AWS_REGION --query "LoadBalancerDe
 Set-Location -Path "terraform-aws\environments\dev"
 terraform init -backend-config=backend.hcl
 terraform destroy -auto-approve
+```
+
+---
+
+### 5.2 Tiêu Hủy Toàn Bộ Hạ Tầng Global (Full Account Cleanup - Chỉ chạy khi ngừng hẳn dự án)
+
+> [!WARNING]
+> Chỉ thực hiện mục này khi bạn muốn **dọn dẹp triệt để toàn bộ tài nguyên trên tài khoản AWS** và không còn tiếp tục phát triển dự án Online Boutique.  
+> Các module Global chứa Terraform remote state (`s3-backend`), OIDC IAM Roles (`github-oidc`) và 11 kho lưu trữ container images (`ecr`).  
+> **Thứ tự thực hiện bắt buộc:**
+> 1. Đảm bảo hạ tầng môi trường `dev` đã được tiêu hủy hoàn toàn (theo [Mục 5.1](#51-tiêu-hủy-hạ-tầng-môi-trường-dev-cuối-ngày-daily-teardown---giữ-lại-global)).
+> 2. Tiêu hủy ECR Repositories (`terraform-aws/global/ecr`).
+> 3. Tiêu hủy GitHub Actions OIDC Provider & IAM Roles (`terraform-aws/global/github-oidc`).
+> 4. Tiêu hủy S3 State Backend Bucket (`terraform-aws/global/s3-backend`).
+
+#### Bước 1: Tiêu hủy Global Amazon ECR Repositories (`terraform-aws/global/ecr`)
+
+Nếu các repositories trong ECR đang chứa container images, AWS sẽ chặn thao tác xóa nếu cờ `force_delete` không được kích hoạt. Hãy xóa toàn bộ repositories và images thông qua AWS CLI trước khi chạy `terraform destroy`:
+
+##### Linux / macOS (Bash):
+```bash
+# Chạy từ thư mục gốc của repo online-boutique-app
+
+# 1. Xóa toàn bộ images và repositories trong 11 ECR repos bằng AWS CLI
+SERVICES=("frontend" "cartservice" "productcatalogservice" "currencyservice" "paymentservice" "shippingservice" "emailservice" "checkoutservice" "recommendationservice" "adservice" "loadgenerator")
+for svc in "${SERVICES[@]}"; do
+  aws ecr delete-repository --repository-name "online-boutique/${svc}" --force --region $AWS_REGION 2>/dev/null || true
+done
+
+# 2. Tiêu hủy tài nguyên ECR bằng Terraform
+cd terraform-aws/global/ecr
+terraform init -backend-config=backend.hcl
+terraform destroy -var="aws_region=$AWS_REGION" -auto-approve
+cd ../../..
+```
+
+##### Windows (PowerShell):
+```powershell
+# Chạy từ thư mục gốc của repo online-boutique-app
+
+# 1. Xóa toàn bộ images và repositories trong 11 ECR repos bằng AWS CLI
+$services = @("frontend", "cartservice", "productcatalogservice", "currencyservice", "paymentservice", "shippingservice", "emailservice", "checkoutservice", "recommendationservice", "adservice", "loadgenerator")
+foreach ($svc in $services) {
+  aws ecr delete-repository --repository-name "online-boutique/$svc" --force --region $env:AWS_REGION 2>$null
+}
+
+# 2. Tiêu hủy tài nguyên ECR bằng Terraform
+Set-Location -Path "terraform-aws\global\ecr"
+terraform init -backend-config=backend.hcl
+terraform destroy -var="aws_region=$env:AWS_REGION" -var="project_name=online-boutique" -auto-approve
+Set-Location -Path "..\..\.."
+```
+
+---
+
+#### Bước 2: Tiêu hủy GitHub Actions OIDC Provider & IAM Roles (`terraform-aws/global/github-oidc`)
+
+##### Linux / macOS (Bash):
+```bash
+# Chạy từ thư mục gốc của repo online-boutique-app
+cd terraform-aws/global/github-oidc
+terraform init -backend-config=backend.hcl
+terraform destroy -var="aws_region=$AWS_REGION" -var="github_org=$GITHUB_ORG" -auto-approve
+cd ../../..
+```
+
+##### Windows (PowerShell):
+```powershell
+# Chạy từ thư mục gốc của repo online-boutique-app
+Set-Location -Path "terraform-aws\global\github-oidc"
+terraform init -backend-config=backend.hcl
+terraform destroy -var="aws_region=$env:AWS_REGION" -var="github_org=$env:GITHUB_ORG" -auto-approve
+Set-Location -Path "..\..\.."
+```
+
+---
+
+#### Bước 3: Tiêu hủy S3 State Backend Bucket (`terraform-aws/global/s3-backend`)
+
+S3 Bucket được bảo vệ bởi thiết lập `prevent_destroy = true` trong `terraform-aws/global/s3-backend/main.tf` và tính năng Versioning. Để tiêu hủy bucket này:
+1. Di chuyển (migrate) state file từ S3 về local state (xóa `backend.tf`).
+2. Xóa toàn bộ objects và version markers trong bucket S3 bằng AWS CLI.
+3. Chuyển tạm thời `prevent_destroy = false` trong `main.tf`.
+4. Thực thi `terraform destroy`.
+
+##### Linux / macOS (Bash):
+```bash
+# Chạy từ thư mục gốc của repo online-boutique-app
+cd terraform-aws/global/s3-backend
+
+# 1. Chuyển state từ S3 về local state
+rm -f backend.tf
+terraform init -migrate-state -force-copy
+
+# 2. Xóa toàn bộ objects và versions trong S3 bucket
+aws s3api delete-objects --bucket "online-boutique-tfstate-${AWS_ACCOUNT_ID}" \
+  --delete "$(aws s3api list-object-versions --bucket "online-boutique-tfstate-${AWS_ACCOUNT_ID}" --query='{Objects: Versions[].{Key:Key,VersionId:VersionId}}' --output json)" 2>/dev/null || true
+aws s3api delete-objects --bucket "online-boutique-tfstate-${AWS_ACCOUNT_ID}" \
+  --delete "$(aws s3api list-object-versions --bucket "online-boutique-tfstate-${AWS_ACCOUNT_ID}" --query='{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' --output json)" 2>/dev/null || true
+
+# 3. Tạm thời tắt prevent_destroy trong main.tf
+sed -i 's/prevent_destroy = true/prevent_destroy = false/g' main.tf
+
+# 4. Thực thi destroy bucket
+terraform destroy -var="aws_region=$AWS_REGION" -auto-approve
+cd ../../..
+```
+
+##### Windows (PowerShell):
+```powershell
+# Chạy từ thư mục gốc của repo online-boutique-app
+Set-Location -Path "terraform-aws\global\s3-backend"
+
+# 1. Chuyển state từ S3 về local state
+Remove-Item -Path "backend.tf" -ErrorAction SilentlyContinue
+terraform init -migrate-state -force-copy
+
+# 2. Xóa toàn bộ objects và versions trong S3 bucket
+$versions = aws s3api list-object-versions --bucket "online-boutique-tfstate-$env:AWS_ACCOUNT_ID" --output json | ConvertFrom-Json
+if ($versions.Versions) {
+  $del = @{ Objects = @($versions.Versions | ForEach-Object { @{ Key = $_.Key; VersionId = $_.VersionId } }) } | ConvertTo-Json -Compress
+  aws s3api delete-objects --bucket "online-boutique-tfstate-$env:AWS_ACCOUNT_ID" --delete "$del" 2>$null
+}
+if ($versions.DeleteMarkers) {
+  $delMarkers = @{ Objects = @($versions.DeleteMarkers | ForEach-Object { @{ Key = $_.Key; VersionId = $_.VersionId } }) } | ConvertTo-Json -Compress
+  aws s3api delete-objects --bucket "online-boutique-tfstate-$env:AWS_ACCOUNT_ID" --delete "$delMarkers" 2>$null
+}
+
+# 3. Tạm thời tắt prevent_destroy trong main.tf
+(Get-Content -Path "main.tf") -replace 'prevent_destroy = true', 'prevent_destroy = false' | Set-Content -Path "main.tf"
+
+# 4. Thực thi destroy bucket
+terraform destroy -var="aws_region=$env:AWS_REGION" -auto-approve
+Set-Location -Path "..\..\.."
 ```
 
 ---
