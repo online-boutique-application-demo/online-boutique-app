@@ -492,7 +492,7 @@ terraform output
 
 # Lấy Redis endpoint mới và cập nhật vào overlays/dev/env.properties (nhánh deploy/dev)
 REDIS_ENDPOINT=$(terraform output -raw redis_connection_string)
-cd ../../../online-boutique-config
+cd ../../../../online-boutique-config
 git checkout deploy/dev
 cat > overlays/dev/env.properties <<EOF
 ECR_REGISTRY=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
@@ -518,12 +518,13 @@ terraform output
 
 # Lấy Redis endpoint mới và cập nhật vào overlays/dev/env.properties (nhánh deploy/dev)
 $REDIS_ENDPOINT = (terraform output -raw redis_connection_string)
-Set-Location -Path "..\..\..\online-boutique-config"
+Set-Location -Path "..\..\..\..\online-boutique-config"
 git checkout deploy/dev
-@"
+$envContent = @"
 ECR_REGISTRY=$($env:AWS_ACCOUNT_ID).dkr.ecr.$($env:AWS_REGION).amazonaws.com
 REDIS_ADDR=$REDIS_ENDPOINT
-"@ | Set-Content -Path "overlays\dev\env.properties" -Encoding UTF8
+"@
+[System.IO.File]::WriteAllText("$PWD\overlays\dev\env.properties", $envContent, (New-Object System.Text.UTF8Encoding $false))
 git add overlays/dev/env.properties
 git commit -m "chore(dev): update redis endpoint after bootstrap"
 git push origin deploy/dev
