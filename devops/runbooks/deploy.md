@@ -336,7 +336,7 @@ flowchart LR
     CI --> BOOTSTRAP["Chuyển sang Mục 4.2<br/>(Bootstrap Môi Trường Dev)"]
 ```
 
-#### Bước 0.1: Chạy Script Thiết Lập Tự Động (`setup.sh` / `setup.ps1`)
+#### Bước 1: Chạy Script Thiết Lập Tự Động (`setup.sh` / `setup.ps1`)
 
 Script này sẽ tự động sinh các file gitignored (`backend.hcl` ở 4 thư mục Terraform, `terraform.tfvars` ở `environments/dev`) và tạo nhánh `deploy/dev` cùng file `overlays/dev/env.properties` bên repo `online-boutique-config`.
 
@@ -354,7 +354,7 @@ Script này sẽ tự động sinh các file gitignored (`backend.hcl` ở 4 th�
 
 ---
 
-#### Bước 0.2: Khởi tạo S3 State Backend (`terraform-aws/global/s3-backend` - Quy trình 2 pha)
+#### Bước 2: Khởi tạo S3 State Backend (`terraform-aws/global/s3-backend` - Quy trình 2 pha)
 
 Module `s3-backend` sử dụng tính năng native state locking trên S3 (`use_lockfile = true`, Terraform >= 1.10) và được khởi tạo theo 2 pha:
 
@@ -397,7 +397,7 @@ Set-Location -Path "..\..\.."
 
 ---
 
-#### Bước 0.3: Khởi tạo GitHub Actions OIDC Provider & IAM Roles (`terraform-aws/global/github-oidc`)
+#### Bước 3: Khởi tạo GitHub Actions OIDC Provider & IAM Roles (`terraform-aws/global/github-oidc`)
 
 Tạo OpenID Connect (OIDC) Provider và 2 IAM Roles chuyên dụng (`online-boutique-github-ci` cho CI/CD pipeline và `online-boutique-github-terraform` cho Terraform automation) để GitHub Actions xác thực trực tiếp với AWS mà không cần hardcode AWS Access Keys:
 
@@ -421,7 +421,7 @@ Set-Location -Path "..\..\.."
 
 ---
 
-#### Bước 0.4: Khởi tạo Global Amazon ECR Repositories (`terraform-aws/global/ecr`)
+#### Bước 4: Khởi tạo Global Amazon ECR Repositories (`terraform-aws/global/ecr`)
 
 Tạo 11 ECR repositories cho 11 microservices:
 
@@ -445,7 +445,7 @@ Set-Location -Path "..\..\.."
 
 ---
 
-#### Bước 0.5: Build & Push 11 Container Images lần đầu lên ECR (Dành cho người dùng mới)
+#### Bước 5: Build & Push 11 Container Images lần đầu lên ECR (Dành cho người dùng mới)
 
 > [!IMPORTANT]
 > Sau Bước 0.4, 11 ECR repositories mới được tạo sẽ **đang trống (chưa có image)**. Trước khi triển khai Pods lên EKS ở Mục 4.2, người dùng mới cần:
@@ -511,7 +511,7 @@ cd ../online-boutique-app
 Set-Location -Path "terraform-aws\environments\dev"
 
 # Khởi tạo và apply hạ tầng (~10–12 phút)
-terraform init -backend-config=backend.hcl
+terraform init -backend-config="backend.hcl"
 terraform apply -auto-approve
 
 # Kiểm tra các giá trị dynamic sinh ra
@@ -667,10 +667,20 @@ cd ../online-boutique-config
 # Chạy script bootstrap ArgoCD applications cho môi trường dev
 ./scripts/bootstrap-argocd.sh dev
 
-# Chờ toàn bộ microservices chuyển sang trạng thái sẵn sàng
+# Chờ ArgoCD khởi tạo đủ 11 Deployments trước khi gọi kubectl wait (tránh lỗi 'no matching resources found')
+echo "Waiting for ArgoCD to create deployments in online-boutique..."
+for i in $(seq 1 36); do
+  [ "$(kubectl get deploy -n online-boutique --no-headers 2>/dev/null | wc -l)" -ge 11 ] && break
+  sleep 5
+done
 kubectl wait --for=condition=available deployment --all -n online-boutique --timeout=300s
 
-# Chờ pods monitoring sẵn sàng
+# Chờ ArgoCD & Prometheus Operator khởi tạo Pod Prometheus trước khi gọi kubectl wait
+echo "Waiting for Prometheus pod to be created in monitoring..."
+for i in $(seq 1 36); do
+  [ -n "$(kubectl get pod -l app.kubernetes.io/name=prometheus -n monitoring -o name 2>/dev/null)" ] && break
+  sleep 5
+done
 kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=prometheus -n monitoring --timeout=180s
 ```
 
@@ -682,10 +692,20 @@ Set-Location -Path "..\online-boutique-config"
 # Chạy script bootstrap ArgoCD applications cho môi trường dev
 .\scripts\bootstrap-argocd.ps1 dev
 
-# Chờ toàn bộ microservices chuyển sang trạng thái sẵn sàng
+# Chờ ArgoCD khởi tạo đủ 11 Deployments trước khi gọi kubectl wait (tránh lỗi 'no matching resources found')
+Write-Host "Waiting for ArgoCD to create deployments in online-boutique..."
+for ($i = 0; $i -lt 36; $i++) {
+    if ((@(kubectl get deploy -n online-boutique -o name 2>$null)).Count -ge 11) { break }
+    Start-Sleep -Seconds 5
+}
 kubectl wait --for=condition=available deployment --all -n online-boutique --timeout=300s
 
-# Chờ pods monitoring sẵn sàng
+# Chờ ArgoCD & Prometheus Operator khởi tạo Pod Prometheus trước khi gọi kubectl wait
+Write-Host "Waiting for Prometheus pod to be created in monitoring..."
+for ($i = 0; $i -lt 36; $i++) {
+    if ((@(kubectl get pod -l app.kubernetes.io/name=prometheus -n monitoring -o name 2>$null)).Count -ge 1) { break }
+    Start-Sleep -Seconds 5
+}
 kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=prometheus -n monitoring --timeout=180s
 ```
 
