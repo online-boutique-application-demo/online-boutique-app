@@ -16,11 +16,12 @@ Trước khi thực thi các lệnh bên dưới, hãy thiết lập các biến
 export AWS_ACCOUNT_ID=<AWS_ACCOUNT_ID>
 export AWS_REGION=<AWS_REGION>
 export EKS_CLUSTER_NAME=online-boutique-dev
+export GITHUB_ORG=<GITHUB_ORG>
 ```
 
 ##### Windows (PowerShell):
 ```powershell
-$env:AWS_ACCOUNT_ID = "<AWS_ACCOUNT_ID>"; $env:AWS_REGION = "<AWS_REGION>"; $env:EKS_CLUSTER_NAME = "online-boutique-dev"
+$env:AWS_ACCOUNT_ID = "<AWS_ACCOUNT_ID>"; $env:AWS_REGION = "<AWS_REGION>"; $env:EKS_CLUSTER_NAME = "online-boutique-dev"; $env:GITHUB_ORG = "<GITHUB_ORG>"
 ```
 
 ---
@@ -106,13 +107,13 @@ kubectl logs <pod-name> -n online-boutique -c istio-proxy --previous --tail=30
 #### Giải pháp:
 - **Nếu Exit Code 137 (OOMKilled):** Tăng memory limit trong manifest kustomize của service đó (ví dụ từ `128Mi` lên `256Mi` hoặc `512Mi`), sau đó commit lên repo `online-boutique-config`.
 - **Nếu lỗi `mustMapEnv` (Go panic):** Kiểm tra `base/online-boutique/<service>.yaml`. Đảm bảo các biến môi trường cấu hình địa chỉ gRPC đầy đủ giá trị. Lưu ý `SHOPPING_ASSISTANT_SERVICE_ADDR` phải luôn được khai báo dù service này bị tắt (`ENABLE_ASSISTANT=false`).
-- **Nếu lỗi ElastiCache connection (cartservice):** Kiểm tra ConfigMap hoặc Secret chứa endpoint Redis:
+- **Nếu lỗi ElastiCache connection (cartservice):** Lấy endpoint từ Terraform output:
   ```bash
-  # Lấy connection string từ Terraform output
+  # Lấy connection string từ Terraform output (đã bao gồm cổng :6379)
   cd terraform-aws/environments/dev
-  terraform output redis_connection_string
+  terraform output -raw redis_connection_string
   ```
-  Cập nhật lại giá trị vào overlay patch `overlays/dev/patches/cartservice-redis.yaml`.
+  Sau đó cập nhật giá trị `REDIS_ADDR=<endpoint>` trong file `overlays/dev/env.properties` trên nhánh `deploy/dev` của repo `online-boutique-config` (và kiểm tra `ECR_REGISTRY` trong cùng file nếu cần), commit & push lên `origin deploy/dev`. ArgoCD sẽ tự động đồng bộ giá trị cấu hình mới.
 
 #### Phòng ngừa:
 - Áp dụng Kyverno ClusterPolicy `require-resources` để bắt buộc mọi container đều có request/limit rõ ràng.
@@ -176,9 +177,10 @@ kubectl get policyreport -n online-boutique
 - **Nếu tag bị gõ nhầm:** Sửa trường `newTag` trong `online-boutique-config/overlays/dev/kustomization.yaml` khớp với SHA trên ECR:
   ```yaml
   images:
-    - name: <AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/online-boutique/frontend
+    - name: REGISTRY/online-boutique/frontend
       newTag: sha-a1b2c3d
   ```
+  *(Ghi chú: Nếu sai AWS Account ID hoặc Region trong URI của image, hãy kiểm tra và sửa biến `ECR_REGISTRY` trong file `overlays/dev/env.properties` trên nhánh `deploy/dev`)*.
 - **Nếu lỗi xác thực IAM:** Kiểm tra role đính kèm vào EKS Node Group (`<EKS_CLUSTER_NAME>-node-role`). Đảm bảo policy `AmazonEC2ContainerRegistryReadOnly` được attach.
 
 #### Phòng ngừa:
@@ -518,8 +520,8 @@ Condition = {
 Áp dụng lại cấu hình Terraform:
 ```bash
 cd terraform-aws/global/github-oidc
-terraform init
-terraform apply -auto-approve
+terraform init -backend-config=backend.hcl
+terraform apply -var="github_org=$GITHUB_ORG" -auto-approve
 ```
 
 #### Phòng ngừa:
@@ -566,7 +568,7 @@ aws iam get-policy-version --policy-arn "arn:aws:iam::$($env:AWS_ACCOUNT_ID):pol
 ```
 
 #### Giải pháp:
-- Nếu thiếu repository, di chuyển vào `terraform-aws/global/ecr`, cập nhật danh sách repository và chạy `terraform apply`.
+- Nếu thiếu repository, di chuyển vào `terraform-aws/global/ecr`, cập nhật danh sách repository, chạy `terraform init -backend-config=backend.hcl` và `terraform apply -var="aws_region=$AWS_REGION"`.
 - Đảm bảo workflow GitHub Actions luôn gọi action `aws-actions/amazon-ecr-login@v2` ngay trước bước `docker push`.
 
 #### Phòng ngừa:

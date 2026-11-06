@@ -15,11 +15,12 @@ Trước khi thực thi các lệnh bên dưới, hãy thiết lập các biến
 export AWS_ACCOUNT_ID=<AWS_ACCOUNT_ID>
 export AWS_REGION=<AWS_REGION>
 export EKS_CLUSTER_NAME=online-boutique-dev
+export GITHUB_ORG=<GITHUB_ORG>
 ```
 
 ##### Windows (PowerShell):
 ```powershell
-$env:AWS_ACCOUNT_ID = "<AWS_ACCOUNT_ID>"; $env:AWS_REGION = "<AWS_REGION>"; $env:EKS_CLUSTER_NAME = "online-boutique-dev"
+$env:AWS_ACCOUNT_ID = "<AWS_ACCOUNT_ID>"; $env:AWS_REGION = "<AWS_REGION>"; $env:EKS_CLUSTER_NAME = "online-boutique-dev"; $env:GITHUB_ORG = "<GITHUB_ORG>"
 ```
 
 ---
@@ -338,6 +339,9 @@ flowchart TD
 
 ### 4.2 Lệnh Triển Khai Chi Tiết Từng Bước
 
+> [!NOTE]
+> **Điều kiện tiên quyết (Chạy 1 lần đầu tiên):** Nếu chưa có các file cấu hình cục bộ (`backend.hcl`, `terraform.tfvars` - đã được gitignore) và nhánh `deploy/dev` bên repo `online-boutique-config`, hãy chạy `./scripts/setup.sh` (Bash) hoặc `.\scripts\setup.ps1` (PowerShell) từ thư mục gốc `online-boutique-app` trước khi bắt đầu Bước 1.
+
 #### Bước 1: Khởi tạo nền tảng hạ tầng AWS bằng Terraform
 
 ##### Linux / macOS (Bash):
@@ -346,11 +350,24 @@ flowchart TD
 cd terraform-aws/environments/dev
 
 # Khởi tạo và apply hạ tầng (~10–12 phút)
-terraform init
+terraform init -backend-config=backend.hcl
 terraform apply -auto-approve
 
 # Kiểm tra các giá trị dynamic sinh ra
 terraform output
+
+# Lấy Redis endpoint mới và cập nhật vào overlays/dev/env.properties (nhánh deploy/dev)
+REDIS_ENDPOINT=$(terraform output -raw redis_connection_string)
+cd ../../../online-boutique-config
+git checkout deploy/dev
+cat > overlays/dev/env.properties <<EOF
+ECR_REGISTRY=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+REDIS_ADDR=${REDIS_ENDPOINT}
+EOF
+git add overlays/dev/env.properties
+git commit -m "chore(dev): update redis endpoint after bootstrap" || true
+git push origin deploy/dev
+cd ../online-boutique-app
 ```
 
 ##### Windows (PowerShell):
@@ -359,11 +376,24 @@ terraform output
 Set-Location -Path "terraform-aws\environments\dev"
 
 # Khởi tạo và apply hạ tầng (~10–12 phút)
-terraform init
+terraform init -backend-config=backend.hcl
 terraform apply -auto-approve
 
 # Kiểm tra các giá trị dynamic sinh ra
 terraform output
+
+# Lấy Redis endpoint mới và cập nhật vào overlays/dev/env.properties (nhánh deploy/dev)
+$REDIS_ENDPOINT = (terraform output -raw redis_connection_string)
+Set-Location -Path "..\..\..\online-boutique-config"
+git checkout deploy/dev
+@"
+ECR_REGISTRY=$($env:AWS_ACCOUNT_ID).dkr.ecr.$($env:AWS_REGION).amazonaws.com
+REDIS_ADDR=$REDIS_ENDPOINT
+"@ | Set-Content -Path "overlays\dev\env.properties" -Encoding UTF8
+git add overlays/dev/env.properties
+git commit -m "chore(dev): update redis endpoint after bootstrap"
+git push origin deploy/dev
+Set-Location -Path "..\online-boutique-app"
 ```
 
 ---
@@ -406,8 +436,9 @@ helm install argocd argo/argo-cd \
 kubectl wait --for=condition=available deployment -l app.kubernetes.io/part-of=argocd -n argocd --timeout=120s
 
 # 3. Kích hoạt AWS Load Balancer Controller và Cluster Autoscaler qua ArgoCD Applications
-kubectl apply -f argocd/apps/dev/aws-lb-controller.yaml
-kubectl apply -f argocd/apps/dev/cluster-autoscaler.yaml
+export EKS_CLUSTER_NAME=${EKS_CLUSTER_NAME:-online-boutique-dev}
+envsubst '$AWS_ACCOUNT_ID $AWS_REGION $EKS_CLUSTER_NAME' < argocd/apps/dev/aws-lb-controller.yaml | kubectl apply -f -
+envsubst '$AWS_ACCOUNT_ID $AWS_REGION $EKS_CLUSTER_NAME' < argocd/apps/dev/cluster-autoscaler.yaml | kubectl apply -f -
 
 # 4. CHỜ BẮT BUỘC: Cluster Autoscaler phải sẵn sàng trước khi tiếp tục
 kubectl wait --for=condition=available deployment/cluster-autoscaler-aws-cluster-autoscaler -n kube-system --timeout=180s
@@ -427,8 +458,8 @@ helm install argocd argo/argo-cd `
 kubectl wait --for=condition=available deployment -l app.kubernetes.io/part-of=argocd -n argocd --timeout=120s
 
 # 3. Kích hoạt AWS Load Balancer Controller và Cluster Autoscaler qua ArgoCD Applications
-kubectl apply -f argocd/apps/dev/aws-lb-controller.yaml
-kubectl apply -f argocd/apps/dev/cluster-autoscaler.yaml
+(Get-Content -Raw -Path "argocd\apps\dev\aws-lb-controller.yaml").Replace('${AWS_ACCOUNT_ID}', $env:AWS_ACCOUNT_ID).Replace('${AWS_REGION}', $env:AWS_REGION).Replace('${EKS_CLUSTER_NAME}', $env:EKS_CLUSTER_NAME) | kubectl apply -f -
+(Get-Content -Raw -Path "argocd\apps\dev\cluster-autoscaler.yaml").Replace('${AWS_ACCOUNT_ID}', $env:AWS_ACCOUNT_ID).Replace('${AWS_REGION}', $env:AWS_REGION).Replace('${EKS_CLUSTER_NAME}', $env:EKS_CLUSTER_NAME) | kubectl apply -f -
 
 # 4. CHỜ BẮT BUỘC: Cluster Autoscaler phải sẵn sàng trước khi tiếp tục
 kubectl wait --for=condition=available deployment/cluster-autoscaler-aws-cluster-autoscaler -n kube-system --timeout=180s
@@ -436,7 +467,10 @@ kubectl wait --for=condition=available deployment/cluster-autoscaler-aws-cluster
 
 ---
 
-#### Bước 4: Khởi tạo Istio Service Mesh, Kiali và 11 Microservices
+#### Bước 4: Khởi tạo Istio Service Mesh và Kiali Server
+
+> [!NOTE]
+> Việc triển khai các ArgoCD Applications (`istio-config-dev`, `online-boutique-dev`, `kyverno`, `kyverno-policies` và toàn bộ Monitoring stack) sẽ được thực hiện tập trung qua script `bootstrap-argocd` ở Bước 5.
 
 ##### Linux / macOS (Bash):
 ```bash
@@ -453,19 +487,10 @@ kubectl annotate svc istio-ingressgateway -n istio-system service.beta.kubernete
 kubectl create namespace online-boutique --dry-run=client -o yaml | kubectl apply -f -
 kubectl label namespace online-boutique istio-injection=enabled --overwrite
 
-# 4. Áp dụng cấu hình Mesh (Gateway, VirtualService, mTLS STRICT, AuthPolicy)
-kubectl apply -f argocd/apps/dev/istio-config.yaml
-
-# 5. Triển khai 11 Microservices qua ArgoCD
-kubectl apply -f argocd/apps/dev/online-boutique.yaml
-
-# 6. Cài đặt Kiali Server
+# 4. Cài đặt Kiali Server
 helm repo add kiali https://kiali.org/helm-charts 2>/dev/null || true
 helm repo update
 helm upgrade --install kiali-server kiali/kiali-server -n istio-system -f base/istio/kiali-values.yaml
-
-# 7. Chờ toàn bộ microservices chuyển sang trạng thái sẵn sàng
-kubectl wait --for=condition=available deployment --all -n online-boutique --timeout=300s
 ```
 
 ##### Windows (PowerShell):
@@ -483,34 +508,28 @@ kubectl annotate svc istio-ingressgateway -n istio-system service.beta.kubernete
 kubectl create namespace online-boutique 2>$null
 kubectl label namespace online-boutique istio-injection=enabled --overwrite
 
-# 4. Áp dụng cấu hình Mesh (Gateway, VirtualService, mTLS STRICT, AuthPolicy)
-kubectl apply -f argocd/apps/dev/istio-config.yaml
-
-# 5. Triển khai 11 Microservices qua ArgoCD
-kubectl apply -f argocd/apps/dev/online-boutique.yaml
-
-# 6. Cài đặt Kiali Server
+# 4. Cài đặt Kiali Server
 helm repo add kiali https://kiali.org/helm-charts 2>$null
 helm repo update
 helm upgrade --install kiali-server kiali/kiali-server -n istio-system -f base/istio/kiali-values.yaml
-
-# 7. Chờ toàn bộ microservices chuyển sang trạng thái sẵn sàng
-kubectl wait --for=condition=available deployment --all -n online-boutique --timeout=300s
 ```
 
 ---
 
-#### Bước 5: Triển khai Monitoring & Observability Stack
+#### Bước 5: Triển khai Microservices, Mesh Config, Kyverno và Monitoring Stack qua Script Bootstrap
 
-Áp dụng toàn bộ ArgoCD Applications còn lại trong thư mục `argocd/apps/dev/`:
+Triển khai toàn bộ các ứng dụng ArgoCD Applications bằng script bootstrap chuẩn. Script này sẽ hỏi mật khẩu Grafana nếu biến `GRAFANA_ADMIN_PASSWORD` chưa đặt, tự tạo namespace `monitoring` + Secret `grafana-admin`, và render các biến `${GITHUB_ORG}`, `${AWS_ACCOUNT_ID}`, `${AWS_REGION}`, `${EKS_CLUSTER_NAME}`, `${CONFIG_REVISION}` cho toàn bộ `argocd/apps/dev/*.yaml` rồi apply lên cụm:
 
 ##### Linux / macOS (Bash):
 ```bash
 # Chạy từ thư mục gốc của repo online-boutique-config
 cd ../online-boutique-config
 
-# Áp dụng tất cả các App manifests (ArgoCD tự động kích hoạt 5 apps monitoring)
-kubectl apply -f argocd/apps/dev/
+# Chạy script bootstrap ArgoCD applications cho môi trường dev
+./scripts/bootstrap-argocd.sh dev
+
+# Chờ toàn bộ microservices chuyển sang trạng thái sẵn sàng
+kubectl wait --for=condition=available deployment --all -n online-boutique --timeout=300s
 
 # Chờ pods monitoring sẵn sàng
 kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=prometheus -n monitoring --timeout=180s
@@ -521,8 +540,11 @@ kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=prometheus -n m
 # Chạy từ thư mục gốc của repo online-boutique-config
 Set-Location -Path "..\online-boutique-config"
 
-# Áp dụng tất cả các App manifests (ArgoCD tự động kích hoạt 5 apps monitoring)
-kubectl apply -f argocd/apps/dev/
+# Chạy script bootstrap ArgoCD applications cho môi trường dev
+.\scripts\bootstrap-argocd.ps1 dev
+
+# Chờ toàn bộ microservices chuyển sang trạng thái sẵn sàng
+kubectl wait --for=condition=available deployment --all -n online-boutique --timeout=300s
 
 # Chờ pods monitoring sẵn sàng
 kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=prometheus -n monitoring --timeout=180s
@@ -578,6 +600,7 @@ kubectl delete namespace online-boutique --timeout=90s || true
 istioctl uninstall --purge -y || true
 kubectl delete namespace istio-system --timeout=60s || true
 
+kubectl delete application kyverno-policies kyverno -n argocd --timeout=60s 2>/dev/null || true
 kubectl delete application aws-lb-controller cluster-autoscaler -n argocd --timeout=60s 2>/dev/null || true
 helm uninstall argocd -n argocd 2>/dev/null || true
 kubectl delete namespace argocd --timeout=60s || true
@@ -588,6 +611,7 @@ aws elb describe-load-balancers --region $AWS_REGION --query "LoadBalancerDescri
 
 # BƯỚC 2: Chạy Terraform Destroy (từ thư mục gốc của repo online-boutique-app)
 cd terraform-aws/environments/dev
+terraform init -backend-config=backend.hcl
 terraform destroy -auto-approve
 ```
 
@@ -608,6 +632,7 @@ kubectl delete namespace online-boutique --timeout=90s
 istioctl uninstall --purge -y
 kubectl delete namespace istio-system --timeout=60s
 
+kubectl delete application kyverno-policies kyverno -n argocd --timeout=60s 2>$null
 kubectl delete application aws-lb-controller cluster-autoscaler -n argocd --timeout=60s 2>$null
 helm uninstall argocd -n argocd 2>$null
 kubectl delete namespace argocd --timeout=60s
@@ -618,6 +643,7 @@ aws elb describe-load-balancers --region $env:AWS_REGION --query "LoadBalancerDe
 
 # BƯỚC 2: Chạy Terraform Destroy (từ thư mục gốc của repo online-boutique-app)
 Set-Location -Path "terraform-aws\environments\dev"
+terraform init -backend-config=backend.hcl
 terraform destroy -auto-approve
 ```
 

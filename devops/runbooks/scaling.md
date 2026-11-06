@@ -15,11 +15,12 @@ Trước khi thực thi các lệnh bên dưới, hãy thiết lập các biến
 export AWS_ACCOUNT_ID=<AWS_ACCOUNT_ID>
 export AWS_REGION=<AWS_REGION>
 export EKS_CLUSTER_NAME=online-boutique-dev
+export GITHUB_ORG=<GITHUB_ORG>
 ```
 
 ##### Windows (PowerShell):
 ```powershell
-$env:AWS_ACCOUNT_ID = "<AWS_ACCOUNT_ID>"; $env:AWS_REGION = "<AWS_REGION>"; $env:EKS_CLUSTER_NAME = "online-boutique-dev"
+$env:AWS_ACCOUNT_ID = "<AWS_ACCOUNT_ID>"; $env:AWS_REGION = "<AWS_REGION>"; $env:EKS_CLUSTER_NAME = "online-boutique-dev"; $env:GITHUB_ORG = "<GITHUB_ORG>"
 ```
 
 ---
@@ -226,7 +227,7 @@ Khi có Pod rơi vào trạng thái `Pending` với sự kiện `FailedSchedulin
 Khi cần chuẩn bị cho đợt kiểm thử tải lớn (Stress Testing) hoặc khi số lượng workloads tăng, hãy nâng ngưỡng node thông qua Terraform:
 
 #### Bước 1: Điều chỉnh biến số cấu hình
-Mở tệp `terraform-aws/environments/dev/terraform.tfvars`:
+Mở tệp `terraform-aws/environments/dev/terraform.tfvars` (lưu ý: tệp này được sinh tự động bởi `scripts/setup.ps1` hoặc `setup.sh` từ `terraform.tfvars.example`):
 
 ```hcl
 node_desired_size = 4
@@ -241,7 +242,8 @@ node_max_size     = 8   # Nâng trần tối đa từ 5 lên 8 nodes
 # Chạy từ thư mục gốc của repo online-boutique-app
 cd terraform-aws/environments/dev
 
-# 1. Khởi tạo và kiểm tra kế hoạch thay đổi
+# 1. Khởi tạo backend S3 và kiểm tra kế hoạch thay đổi
+terraform init -backend-config=backend.hcl
 terraform plan -target=module.eks
 
 # 2. Áp dụng thay đổi cấu hình Node Group
@@ -253,7 +255,8 @@ terraform apply -target=module.eks -auto-approve
 # Chạy từ thư mục gốc của repo online-boutique-app
 Set-Location -Path "terraform-aws\environments\dev"
 
-# 1. Khởi tạo và kiểm tra kế hoạch thay đổi
+# 1. Khởi tạo backend S3 và kiểm tra kế hoạch thay đổi
+terraform init -backend-config=backend.hcl
 terraform plan -target=module.eks
 
 # 2. Áp dụng thay đổi cấu hình Node Group
@@ -337,7 +340,7 @@ kubectl scale deployment loadgenerator -n online-boutique --replicas=0
 Thực hiện thay đổi số lượng replica trực tiếp trong repository cấu hình:
 1. Mở file `online-boutique-config/base/online-boutique/<service>.yaml` (hoặc patch overlay dev).
 2. Sửa giá trị `spec.replicas: N`.
-3. Commit và push lên GitHub. ArgoCD sẽ phát hiện commit mới và đồng bộ an toàn 100%.
+3. Commit và push lên nhánh `deploy/dev` của repo `online-boutique-config`. ArgoCD sẽ phát hiện commit mới và đồng bộ an toàn 100%.
 
 #### Phương án 2: Can Thiệp Khẩn Cấp (Emergency Override)
 Nếu đang trong lúc sự cố cần scale gấp bằng `kubectl` mà không muốn ArgoCD tự revert:

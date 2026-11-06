@@ -15,11 +15,12 @@ Trước khi thực thi các lệnh bên dưới, hãy thiết lập các biến
 export AWS_ACCOUNT_ID=<AWS_ACCOUNT_ID>
 export AWS_REGION=<AWS_REGION>
 export EKS_CLUSTER_NAME=online-boutique-dev
+export GITHUB_ORG=<GITHUB_ORG>
 ```
 
 ##### Windows (PowerShell):
 ```powershell
-$env:AWS_ACCOUNT_ID = "<AWS_ACCOUNT_ID>"; $env:AWS_REGION = "<AWS_REGION>"; $env:EKS_CLUSTER_NAME = "online-boutique-dev"
+$env:AWS_ACCOUNT_ID = "<AWS_ACCOUNT_ID>"; $env:AWS_REGION = "<AWS_REGION>"; $env:EKS_CLUSTER_NAME = "online-boutique-dev"; $env:GITHUB_ORG = "<GITHUB_ORG>"
 ```
 
 ---
@@ -429,6 +430,9 @@ cd terraform-aws/environments/dev
 git log --oneline -n 5
 git checkout <stable-commit-hash> -- .
 
+# Khởi tạo backend S3
+terraform init -backend-config=backend.hcl
+
 # 2. Kiểm tra các thay đổi dự kiến
 terraform plan
 
@@ -447,6 +451,9 @@ Set-Location -Path "terraform-aws\environments\dev"
 # 1. Checkout phiên bản commit Terraform ổn định trước đó
 git log --oneline -n 5
 git checkout <stable-commit-hash> -- .
+
+# Khởi tạo backend S3
+terraform init -backend-config=backend.hcl
 
 # 2. Kiểm tra các thay đổi dự kiến
 terraform plan
