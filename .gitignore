@@ -16,6 +16,8 @@
 tfplan
 backend.hcl
 terraform-aws/global/s3-backend/backend.tf
+**/backend.tf
+plan.txt
 !*.example
 crash.log
 crash.*.log
@@ -46,4 +48,6 @@ release/wi-kubernetes-manifests.yaml
 vendor/
 gha-creds-*.json
 .antigravityrules
+.antigravity/
+.claude/
 .zap/report_html.html

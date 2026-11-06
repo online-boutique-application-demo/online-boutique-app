@@ -114,7 +114,7 @@ Add the following under the **Secrets** tab:
 
 #### Optional SonarCloud SAST Configuration:
 If you use SonarCloud for code analysis:
-1. Open [sonar-project.properties](file:///d:/online-boutique/online-boutique-app/sonar-project.properties).
+1. Open [sonar-project.properties](sonar-project.properties).
 2. Set `sonar.organization=<SONAR_ORG>` and `sonar.projectKey=<SONAR_PROJECT_KEY>`.
 3. Add `SONAR_TOKEN` to GitHub Secrets.
 
@@ -305,7 +305,7 @@ $env:AWS_ACCOUNT_ID = "<AWS_ACCOUNT_ID>"
 $env:AWS_REGION = "<AWS_REGION>"
 
 # Optional: $env:GRAFANA_ADMIN_PASSWORD = "YourSecurePassword"
-.\scripts\bootstrap-argocd.ps1 -TargetEnv "dev"
+.\scripts\bootstrap-argocd.ps1 -Env "dev"
 ```
 
 ---
@@ -369,8 +369,8 @@ kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.pas
 ## How CI/CD & GitOps Automation Works
 
 1. **Code Changes & Testing:** Developers commit and push service code to `online-boutique-app` (`main` branch or pull requests).
-2. **Automated CI Build & Push:** The [`ci-main.yml`](file:///d:/online-boutique/online-boutique-app/.github/workflows/ci-main.yml) orchestrator detects modified microservices, builds container images, executes unit tests and lint checks, and pushes tagged images to Amazon ECR.
-3. **Automated Manifest Update:** The [`update-manifests`](file:///d:/online-boutique/online-boutique-app/.github/actions/update-manifests/action.yml) composite action checks out `online-boutique-config` on the branch specified by `CONFIG_REPO_BRANCH` (`deploy/dev`), updates `newTag` for each updated image in `overlays/dev/kustomization.yaml`, and pushes the commit using `CONFIG_REPO_TOKEN`.
+2. **Automated CI Build & Push:** The [`ci-main.yml`](.github/workflows/ci-main.yml) orchestrator detects modified microservices, builds container images, executes unit tests and lint checks, and pushes tagged images to Amazon ECR.
+3. **Automated Manifest Update:** The [`update-manifests`](.github/actions/update-manifests/action.yml) composite action checks out `online-boutique-config` on the branch specified by `CONFIG_REPO_BRANCH` (`deploy/dev`), updates `newTag` for each updated image in `overlays/dev/kustomization.yaml`, and pushes the commit using `CONFIG_REPO_TOKEN`.
 4. **GitOps Rollout:** ArgoCD detects changes on `deploy/dev` and automatically performs a rolling update to the Amazon EKS cluster without manual intervention.
 
 ---
@@ -379,7 +379,7 @@ kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.pas
 
 To completely destroy all cloud resources and avoid ongoing AWS charges, follow the comprehensive destruction sequence in:
 
-📖 **[Teardown & Destruction Guide](file:///d:/online-boutique/online-boutique-app/devops/destroy-guide.md)**
+📖 **[Teardown & Destruction Guide](devops/destroy-guide.md)**
 
 Resources must be destroyed in strict reverse dependency order:
 1. Delete ArgoCD Applications and Kubernetes Ingress Load Balancers.

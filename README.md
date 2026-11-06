@@ -297,15 +297,23 @@ graph TD
 - **Helm** (`>= 3.14.0`)
 - **Git**
 
-### 2. Infrastructure Provisioning
+### 2. Automated Local Setup & Infrastructure Provisioning
+
+First, run the interactive setup script to generate local environment configurations and backend settings (see [SETUP.md](SETUP.md) for full bootstrap instructions):
+
 ```bash
 # Clone both repositories
 git clone https://github.com/<GITHUB_ORG>/online-boutique-app.git
 git clone https://github.com/<GITHUB_ORG>/online-boutique-config.git
 
-# Initialize and apply Terraform (Dev Environment)
-cd online-boutique-app/terraform-aws/environments/dev
-terraform init
+# Run setup script (Linux / macOS: ./scripts/setup.sh | Windows: .\scripts\setup.ps1)
+cd online-boutique-app
+./scripts/setup.sh
+
+# Follow the prompt to bootstrap S3 backend and global modules (github-oidc, ecr)
+# Then initialize and apply Terraform for the Dev environment:
+cd terraform-aws/environments/dev
+terraform init -backend-config=backend.hcl
 terraform apply -auto-approve
 
 # Configure local kubectl context
@@ -313,9 +321,21 @@ aws eks update-kubeconfig --region <AWS_REGION> --name <EKS_CLUSTER_NAME>
 ```
 
 ### 3. ArgoCD & Application Bootstrap
+
+Install ArgoCD, core controllers, and Istio Service Mesh, then bootstrap applications using the bootstrap script (see [Deployment Runbook](devops/runbooks/deploy.md)):
+
 ```bash
-# Apply all ArgoCD applications for the dev environment
-kubectl apply -f ../../../../online-boutique-config/argocd/apps/dev/
+# Update Redis endpoint in overlays/dev/env.properties on deploy/dev branch and push to Git first
+
+# Install ArgoCD & Istio Service Mesh
+helm install argocd argo/argo-cd -n argocd --create-namespace -f ../online-boutique-config/argocd/install/values.yaml
+istioctl install --set profile=default -y
+kubectl create namespace online-boutique --dry-run=client -o yaml | kubectl apply -f -
+kubectl label namespace online-boutique istio-injection=enabled --overwrite
+
+# Bootstrap all ArgoCD applications and monitoring stack
+cd ../online-boutique-config
+./scripts/bootstrap-argocd.sh dev
 
 # Verify all services and sidecars are healthy
 kubectl get pods -n online-boutique -w
@@ -337,8 +357,19 @@ kubectl port-forward svc/argocd-server 8080:443 -n argocd
 ```
 
 ### 5. Daily Teardown (Ephemeral Infrastructure)
-To optimize costs when not running experiments, follow the [Destroy Guide](devops/destroy-guide.md):
+
+> [!WARNING]
+> **DO NOT** run `terraform destroy` directly while Kubernetes LoadBalancer services (such as Istio Ingress Gateway AWS NLB) or ArgoCD applications are still active. Doing so will leave orphaned Elastic Load Balancers and Elastic Network Interfaces (ENIs), blocking VPC deletion and causing Terraform to hang!
+
+To safely tear down ephemeral resources, follow the strict teardown sequence documented in the [Destroy Guide](devops/destroy-guide.md):
+
 ```bash
+# 1. Delete ArgoCD applications and Kubernetes LoadBalancer services first
+kubectl delete -f online-boutique-config/argocd/apps/dev/ --ignore-not-found
+kubectl delete svc -n istio-system istio-ingressgateway --ignore-not-found
+# Wait for AWS NLB and ENIs to be released (~1-2 minutes)
+
+# 2. Safely destroy dev environment infrastructure
 cd online-boutique-app/terraform-aws/environments/dev
 terraform destroy -auto-approve
 ```
@@ -412,5 +443,5 @@ Monthly estimated expenses configured for AWS Region `<AWS_REGION>`:
 
 ## 👏 Acknowledgements & Credits
 
-- **Original Application:** The core application architecture is based on the [Google Cloud Microservices Demo (Online Boutique)](https://github.com/GoogleCloudPlatform/microservices-demo).
+- **Original Application:** The core application microservices source code is derived from [GoogleCloudPlatform/microservices-demo](https://github.com/GoogleCloudPlatform/microservices-demo), licensed under the Apache License 2.0.
 - **DevOps Architecture & Implementation:** Re-architected and engineered for AWS by **[<AUTHOR_NAME>](https://github.com/<AUTHOR_GITHUB_USERNAME>)**.

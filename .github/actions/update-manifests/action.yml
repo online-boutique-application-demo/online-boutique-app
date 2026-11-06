@@ -63,9 +63,9 @@ runs:
         # Update kustomization.yaml newTag for the service (dev overlay)
         DEV_KUSTOMIZATION="$CONFIG_DIR/overlays/dev/kustomization.yaml"
         if [[ -f "$DEV_KUSTOMIZATION" ]]; then
-          yq e "
-            (.images[] | select(.name == \"*/online-boutique/$SERVICE\") | .newTag) = \"$NEW_TAG\"
-          " -i "$DEV_KUSTOMIZATION"
+          SERVICE="$SERVICE" NEW_TAG="$NEW_TAG" yq e '
+            (.images[] | select(.name == "REGISTRY/online-boutique/" + env(SERVICE) or .name == "*/online-boutique/" + env(SERVICE)) | .newTag) = env(NEW_TAG)
+          ' -i "$DEV_KUSTOMIZATION"
           echo "✅ Updated $DEV_KUSTOMIZATION"
         else
           echo "⚠️  No dev kustomization found at $DEV_KUSTOMIZATION – skipping"

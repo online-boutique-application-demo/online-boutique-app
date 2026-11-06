@@ -1,0 +1,8 @@
+# =============================================================================
+# GitHub OIDC – Example Variable Values
+# Copy to terraform.tfvars (gitignored) or pass via -var flags
+# =============================================================================
+
+aws_region      = "ap-southeast-1"
+github_org      = "<GITHUB_ORG>"
+github_repo_app = "online-boutique-app"

@@ -389,7 +389,8 @@ cd ../../..
 
 ##### Windows (PowerShell):
 ```powershell
-(Get-Content -Raw -Path "backend.tf.example").Replace('<AWS_ACCOUNT_ID>', $env:AWS_ACCOUNT_ID).Replace('<AWS_REGION>', $env:AWS_REGION) | Set-Content -Path "backend.tf" -Encoding UTF8
+$backendTf = (Get-Content -Raw -Path "backend.tf.example") -replace '<AWS_ACCOUNT_ID>', $env:AWS_ACCOUNT_ID -replace '<AWS_REGION>', $env:AWS_REGION
+[System.IO.File]::WriteAllText("$PWD\backend.tf", $backendTf, (New-Object System.Text.UTF8Encoding $false))
 terraform init -migrate-state -force-copy
 Set-Location -Path "..\..\.."
 ```
@@ -538,6 +539,7 @@ Set-Location -Path "..\online-boutique-app"
 ##### Linux / macOS (Bash):
 ```bash
 # Cập nhật kubeconfig với AWS CLI
+export EKS_CLUSTER_NAME=${EKS_CLUSTER_NAME:-online-boutique-dev}
 aws eks update-kubeconfig --region $AWS_REGION --name $EKS_CLUSTER_NAME
 
 # Xác nhận kết nối tới cụm
@@ -547,6 +549,7 @@ kubectl get nodes -o wide
 ##### Windows (PowerShell):
 ```powershell
 # Cập nhật kubeconfig với AWS CLI
+if (-not $env:EKS_CLUSTER_NAME) { $env:EKS_CLUSTER_NAME = "online-boutique-dev" }
 aws eks update-kubeconfig --region $env:AWS_REGION --name $env:EKS_CLUSTER_NAME
 
 # Xác nhận kết nối tới cụm
@@ -593,6 +596,7 @@ helm install argocd argo/argo-cd `
 kubectl wait --for=condition=available deployment -l app.kubernetes.io/part-of=argocd -n argocd --timeout=120s
 
 # 3. Kích hoạt AWS Load Balancer Controller và Cluster Autoscaler qua ArgoCD Applications
+if (-not $env:EKS_CLUSTER_NAME) { $env:EKS_CLUSTER_NAME = "online-boutique-dev" }
 (Get-Content -Raw -Path "argocd\apps\dev\aws-lb-controller.yaml").Replace('${AWS_ACCOUNT_ID}', $env:AWS_ACCOUNT_ID).Replace('${AWS_REGION}', $env:AWS_REGION).Replace('${EKS_CLUSTER_NAME}', $env:EKS_CLUSTER_NAME) | kubectl apply -f -
 (Get-Content -Raw -Path "argocd\apps\dev\cluster-autoscaler.yaml").Replace('${AWS_ACCOUNT_ID}', $env:AWS_ACCOUNT_ID).Replace('${AWS_REGION}', $env:AWS_REGION).Replace('${EKS_CLUSTER_NAME}', $env:EKS_CLUSTER_NAME) | kubectl apply -f -
 
@@ -911,7 +915,8 @@ if ($versions.DeleteMarkers) {
 }
 
 # 3. Tạm thời tắt prevent_destroy trong main.tf
-(Get-Content -Path "main.tf") -replace 'prevent_destroy = true', 'prevent_destroy = false' | Set-Content -Path "main.tf"
+$mainTf = (Get-Content -Raw -Path "main.tf") -replace 'prevent_destroy = true', 'prevent_destroy = false'
+[System.IO.File]::WriteAllText("$PWD\main.tf", $mainTf, (New-Object System.Text.UTF8Encoding $false))
 
 # 4. Thực thi destroy bucket
 terraform destroy -var="aws_region=$env:AWS_REGION" -auto-approve

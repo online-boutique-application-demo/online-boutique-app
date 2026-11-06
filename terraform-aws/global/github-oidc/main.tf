@@ -4,8 +4,8 @@
 #
 # USAGE:
 #   cd terraform-aws/global/github-oidc
-#   terraform init
-#   terraform apply
+#   terraform init -backend-config=backend.hcl
+#   terraform apply -var="github_org=<GITHUB_ORG>"
 # =============================================================================
 
 terraform {
@@ -74,9 +74,12 @@ resource "aws_iam_role" "github_ci" {
           }
           StringLike = {
             # Support both classic and immutable ID subject formats (GitHub mid-2026+)
-            # Classic:   repo:ORG/REPO:ref:refs/heads/...
+            # Classic:   repo:ORG/REPO:ref:refs/heads/... or repo:ORG/REPO:environment:dev
             # Immutable: repo:ORG@ID/REPO@ID:ref:refs/heads/...
-            "token.actions.githubusercontent.com:sub" = "repo:*${var.github_repo_app}*"
+            "token.actions.githubusercontent.com:sub" = [
+              "repo:${var.github_org}/${var.github_repo_app}:*",
+              "repo:${var.github_org}@*/${var.github_repo_app}@*:*",
+            ]
           }
         }
       }
@@ -159,9 +162,14 @@ resource "aws_iam_role" "github_terraform" {
           StringEquals = {
             "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
           }
-          # Support both classic and immutable ID subject formats (GitHub mid-2026+)
           StringLike = {
-            "token.actions.githubusercontent.com:sub" = "repo:*${var.github_repo_app}*"
+            # Support both classic and immutable ID subject formats (GitHub mid-2026+)
+            # Classic:   repo:ORG/REPO:ref:refs/heads/... or repo:ORG/REPO:environment:dev
+            # Immutable: repo:ORG@ID/REPO@ID:ref:refs/heads/...
+            "token.actions.githubusercontent.com:sub" = [
+              "repo:${var.github_org}/${var.github_repo_app}:*",
+              "repo:${var.github_org}@*/${var.github_repo_app}@*:*",
+            ]
           }
         }
       }

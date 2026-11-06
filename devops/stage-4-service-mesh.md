@@ -435,7 +435,7 @@ kubectl port-forward svc/kiali 20001:20001 -n istio-system
 2. **Sự phụ thuộc vào Prometheus cho đồ thị lưu lượng (Traffic Graph):**
    - Để vẽ được sơ đồ mạng động (`Traffic Graph`), tính toán tốc độ request/giây (RPS), độ trễ (latency), tỷ lệ lỗi và hiển thị đường truyền mTLS thời gian thực, Kiali **bắt buộc phải truy vấn các chỉ số time-series từ Prometheus** (các metric như `istio_requests_total`, `istio_tcp_connections_opened_total` do Envoy sidecar xuất ra).
 3. **Phân tách trách nhiệm theo kế hoạch (Roadmap Alignment):**
-   - Theo lộ trình dự án tại [plan.md](file:///d:/online-boutique/online-boutique-app/devops/plan.md), toàn bộ hệ thống giám sát tập trung gồm **Prometheus, Grafana, Alertmanager, Loki, và Tempo** sẽ được thiết kế, cài đặt và cấu hình bài bản trong **Stage 5: Monitoring & Observability**.
+   - Theo lộ trình dự án tại [plan.md](plan.md), toàn bộ hệ thống giám sát tập trung gồm **Prometheus, Grafana, Alertmanager, Loki, và Tempo** sẽ được thiết kế, cài đặt và cấu hình bài bản trong **Stage 5: Monitoring & Observability**.
    - Tại Stage 4, Kiali được cài đặt sẵn sàng với cấu hình trỏ tới Prometheus nội bộ (`http://prometheus-server.monitoring:80`). Ngay sau khi Stage 5 hoàn thành việc triển khai Prometheus Stack trong namespace `monitoring`, tab **Traffic Graph** trên Kiali sẽ tự động kích hoạt và hiển thị đầy đủ sơ đồ topology kèm biểu tượng ổ khóa mTLS mà không cần cài đặt lại Kiali.
 
 ---

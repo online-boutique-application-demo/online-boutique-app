@@ -487,7 +487,7 @@ aws iam get-role --role-name online-boutique-github-ci --query 'Role.AssumeRoleP
 aws iam list-open-id-connect-providers
 
 # 3. Xem chi tiết thông số OpenID Connect Provider
-aws iam get-open-id-connect-provider --open-id-connect-provider-arn arn:aws:iam://${AWS_ACCOUNT_ID}:oidc-provider/token.actions.githubusercontent.com
+aws iam get-open-id-connect-provider --open-id-connect-provider-arn arn:aws:iam::${AWS_ACCOUNT_ID}:oidc-provider/token.actions.githubusercontent.com
 ```
 
 ##### Trên Windows (PowerShell):
@@ -552,7 +552,7 @@ aws ecr describe-repositories --region $AWS_REGION --query 'repositories[*].repo
 aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
 
 # 3. Kiểm tra quyền IAM đính kèm vào role CI
-aws iam get-policy-version --policy-arn arn:aws:iam://${AWS_ACCOUNT_ID}:policy/online-boutique-github-ci --version-id v1
+aws iam get-policy-version --policy-arn arn:aws:iam::${AWS_ACCOUNT_ID}:policy/online-boutique-github-ci --version-id v1
 ```
 
 ##### Trên Windows (PowerShell):
