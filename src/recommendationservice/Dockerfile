@@ -53,3 +53,4 @@ ENV PORT="8080"
 EXPOSE 8080
 
 ENTRYPOINT ["python", "recommendation_server.py"]
+# CI E2E build verification
