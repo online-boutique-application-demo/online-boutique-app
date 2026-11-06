@@ -120,6 +120,10 @@ jobs:
         uses: SonarSource/sonarqube-scan-action@v5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.organization=${{ vars.SONAR_ORG || github.repository_owner }}
+            -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY || format('{0}_{1}', github.repository_owner, github.event.repository.name) }}
 
 # ─────────────────────────────────────────────────────────────
 # JOB 3: Build each changed service in parallel
