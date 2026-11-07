@@ -113,10 +113,26 @@ aws elb describe-load-balancers --region $env:AWS_REGION --query "LoadBalancerDe
 
 Chuyển vào thư mục môi trường dev và chạy lệnh destroy:
 
+#### Trên Windows (PowerShell):
 ```powershell
 # Chạy từ thư mục gốc của repo online-boutique-app
 Set-Location -Path "terraform-aws\environments\dev"
 terraform destroy -auto-approve
+
+# Xóa dự phòng CloudWatch Log Groups mồ côi (nếu VPC Flow Logs / EKS tái tạo trễ sau khi destroy)
+aws logs delete-log-group --region $env:AWS_REGION --log-group-name /aws/vpc/flow-logs/online-boutique-dev 2>$null
+aws logs delete-log-group --region $env:AWS_REGION --log-group-name /aws/eks/online-boutique-dev/cluster 2>$null
+```
+
+#### Trên Linux / macOS (Bash):
+```bash
+# Chạy từ thư mục gốc của repo online-boutique-app
+cd terraform-aws/environments/dev
+terraform destroy -auto-approve
+
+# Xóa dự phòng CloudWatch Log Groups mồ côi (nếu VPC Flow Logs / EKS tái tạo trễ sau khi destroy)
+aws logs delete-log-group --region $AWS_REGION --log-group-name /aws/vpc/flow-logs/online-boutique-dev 2>/dev/null || true
+aws logs delete-log-group --region $AWS_REGION --log-group-name /aws/eks/online-boutique-dev/cluster 2>/dev/null || true
 ```
 
 Terraform sẽ xóa toàn bộ EKS Cluster, Spot Node Groups, ElastiCache Redis, NAT Gateway, EIP và VPC trơn tru 100% trong ~10-12 phút mà không gặp bất kỳ lỗi phụ thuộc nào.

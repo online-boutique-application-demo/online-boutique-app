@@ -774,6 +774,10 @@ aws elb describe-load-balancers --region $AWS_REGION --query "LoadBalancerDescri
 cd terraform-aws/environments/dev
 terraform init -backend-config=backend.hcl
 terraform destroy -auto-approve
+
+# Xóa dự phòng CloudWatch Log Groups mồ côi (nếu VPC Flow Logs / EKS tái tạo trễ sau khi destroy)
+aws logs delete-log-group --region $AWS_REGION --log-group-name /aws/vpc/flow-logs/online-boutique-dev 2>/dev/null || true
+aws logs delete-log-group --region $AWS_REGION --log-group-name /aws/eks/online-boutique-dev/cluster 2>/dev/null || true
 ```
 
 ##### Windows (PowerShell):
@@ -806,6 +810,10 @@ aws elb describe-load-balancers --region $env:AWS_REGION --query "LoadBalancerDe
 Set-Location -Path "terraform-aws\environments\dev"
 terraform init -backend-config=backend.hcl
 terraform destroy -auto-approve
+
+# Xóa dự phòng CloudWatch Log Groups mồ côi (nếu VPC Flow Logs / EKS tái tạo trễ sau khi destroy)
+aws logs delete-log-group --region $env:AWS_REGION --log-group-name /aws/vpc/flow-logs/online-boutique-dev 2>$null
+aws logs delete-log-group --region $env:AWS_REGION --log-group-name /aws/eks/online-boutique-dev/cluster 2>$null
 ```
 
 ---

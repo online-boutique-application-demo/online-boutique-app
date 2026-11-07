@@ -219,6 +219,8 @@ resource "aws_cloudwatch_log_group" "flow_logs" {
 resource "null_resource" "cleanup_flow_log_group" {
   count = var.enable_flow_logs ? 1 : 0
 
+  depends_on = [aws_iam_role_policy.flow_logs]
+
   triggers = {
     log_group_name = "/aws/vpc/flow-logs/${var.project_name}-${var.environment}"
   }
@@ -255,13 +257,13 @@ resource "aws_iam_role_policy" "flow_logs" {
   name = "vpc-flow-logs"
   role = aws_iam_role.flow_logs[0].id
 
+  # Do NOT grant logs:CreateLogGroup here; Terraform manages the log group lifecycle and granting CreateLogGroup causes VPC Flow Logs to recreate the log group asynchronously during VPC teardown.
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
         Effect = "Allow"
         Action = [
-          "logs:CreateLogGroup",
           "logs:CreateLogStream",
           "logs:PutLogEvents",
           "logs:DescribeLogGroups",
