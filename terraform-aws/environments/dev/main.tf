@@ -109,3 +109,4 @@ module "irsa" {
   oidc_provider_arn = module.eks.oidc_provider_arn
   oidc_provider_url = module.eks.oidc_provider_url
 }
+# CI/CD E2E Terraform Plan & Apply verification

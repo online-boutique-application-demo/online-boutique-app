@@ -50,62 +50,52 @@ runs:
     - name: Install yq
       uses: mikefarah/yq@v4.44.3
 
-    - name: Update image tag in dev overlay
-      shell: bash
-      run: |
-        CONFIG_DIR="_config_repo"
-        SERVICE="${{ inputs.service }}"
-        NEW_TAG="${{ inputs.image_tag }}"
-        IMAGE_FULL="${{ inputs.image_full }}"
-
-        echo "Updating $SERVICE to $NEW_TAG in dev overlay..."
-
-        # Update kustomization.yaml newTag for the service (dev overlay)
-        DEV_KUSTOMIZATION="$CONFIG_DIR/overlays/dev/kustomization.yaml"
-        if [[ -f "$DEV_KUSTOMIZATION" ]]; then
-          SERVICE="$SERVICE" NEW_TAG="$NEW_TAG" yq e '
-            (.images[] | select(.name == "REGISTRY/online-boutique/" + env(SERVICE) or .name == "*/online-boutique/" + env(SERVICE)) | .newTag) = env(NEW_TAG)
-          ' -i "$DEV_KUSTOMIZATION"
-          echo "✅ Updated $DEV_KUSTOMIZATION"
-        else
-          echo "⚠️  No dev kustomization found at $DEV_KUSTOMIZATION – skipping"
-        fi
-
-    - name: Commit and push changes (with retry for concurrent pushes)
+    - name: Update image tag and push to config repo (with conflict-free retry)
       shell: bash
       env:
         BRANCH: ${{ inputs.config_repo_branch }}
         SERVICE: ${{ inputs.service }}
-        IMAGE_TAG: ${{ inputs.image_tag }}
+        NEW_TAG: ${{ inputs.image_tag }}
       run: |
         cd _config_repo
         git config user.name "GitHub Actions Bot"
         git config user.email "actions@github.com"
 
-        git add .
-        if git diff --staged --quiet; then
-          echo "No changes to commit – image tag already up to date"
+        DEV_KUSTOMIZATION="overlays/dev/kustomization.yaml"
+        if [[ ! -f "$DEV_KUSTOMIZATION" ]]; then
+          echo "⚠️  No dev kustomization found at $DEV_KUSTOMIZATION – skipping"
           exit 0
         fi
 
-        git commit -m "chore(cd): update $SERVICE to $IMAGE_TAG
+        MAX_RETRIES=15
+        for i in $(seq 1 $MAX_RETRIES); do
+          if [[ $i -gt 1 ]]; then
+            SLEEP_TIME=$(( (RANDOM % 4) + i ))
+            echo "⚠️  Push conflict (attempt $((i-1))/$MAX_RETRIES) – waiting ${SLEEP_TIME}s, syncing latest '$BRANCH' and re-applying..."
+            sleep "$SLEEP_TIME"
+            git fetch origin "$BRANCH"
+            git reset --hard "origin/$BRANCH"
+          fi
+
+          yq e '
+            (.images[] | select(.name == "REGISTRY/online-boutique/" + env(SERVICE) or .name == "*/online-boutique/" + env(SERVICE)) | .newTag) = env(NEW_TAG)
+          ' -i "$DEV_KUSTOMIZATION"
+
+          git add "$DEV_KUSTOMIZATION"
+          if git diff --staged --quiet; then
+            echo "✅ No changes to commit – $SERVICE is already at $NEW_TAG"
+            exit 0
+          fi
+
+          git commit -m "chore(cd): update $SERVICE to $NEW_TAG
 
           Source: ${{ github.repository }}@${{ github.sha }}
           Workflow: ${{ github.workflow }} #${{ github.run_number }}"
 
-        # Retry loop: when multiple services push in parallel, some will fail
-        # because the remote has been updated by another service's push.
-        # We retry with git pull --rebase to incorporate the other changes.
-        MAX_RETRIES=5
-        for i in $(seq 1 $MAX_RETRIES); do
           if git push origin HEAD:"$BRANCH"; then
-            echo "✅ Pushed manifest update for $SERVICE (attempt $i)"
+            echo "✅ Pushed manifest update for $SERVICE to $BRANCH (attempt $i)"
             exit 0
           fi
-
-          echo "⚠️  Push failed (attempt $i/$MAX_RETRIES) – pulling latest and retrying..."
-          sleep $((i * 2))  # Exponential-ish backoff: 2s, 4s, 6s, 8s, 10s
-          git pull --rebase origin "$BRANCH"
         done
 
         echo "::error::Failed to push after $MAX_RETRIES attempts"
