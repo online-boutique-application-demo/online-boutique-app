@@ -908,17 +908,21 @@ cd terraform-aws/global/s3-backend
 rm -f backend.tf
 terraform init -migrate-state -force-copy
 
-# 2. Xóa toàn bộ objects và versions trong S3 bucket
-aws s3api delete-objects --bucket "online-boutique-tfstate-${AWS_ACCOUNT_ID}" \
-  --delete "$(aws s3api list-object-versions --bucket "online-boutique-tfstate-${AWS_ACCOUNT_ID}" --query='{Objects: Versions[].{Key:Key,VersionId:VersionId}}' --output json)" 2>/dev/null || true
-aws s3api delete-objects --bucket "online-boutique-tfstate-${AWS_ACCOUNT_ID}" \
-  --delete "$(aws s3api list-object-versions --bucket "online-boutique-tfstate-${AWS_ACCOUNT_ID}" --query='{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' --output json)" 2>/dev/null || true
+# 2. Xóa toàn bộ objects và versions trong S3 bucket (dùng file tạm để tránh giới hạn độ dài tham số CLI)
+BUCKET="online-boutique-tfstate-${AWS_ACCOUNT_ID}"
+aws s3api list-object-versions --bucket "$BUCKET" --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}, Quiet: `true`}' --output json > s3-del.json 2>/dev/null || true
+grep -q '"Key"' s3-del.json && aws s3api delete-objects --bucket "$BUCKET" --delete file://s3-del.json >/dev/null 2>&1 || true
+aws s3api list-object-versions --bucket "$BUCKET" --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}, Quiet: `true`}' --output json > s3-del.json 2>/dev/null || true
+grep -q '"Key"' s3-del.json && aws s3api delete-objects --bucket "$BUCKET" --delete file://s3-del.json >/dev/null 2>&1 || true
+rm -f s3-del.json
 
 # 3. Tạm thời tắt prevent_destroy trong main.tf
 sed -i 's/prevent_destroy = true/prevent_destroy = false/g' main.tf
 
-# 4. Thực thi destroy bucket
+# 4. Thực thi destroy bucket và khôi phục cấu hình gốc
 terraform destroy -var="aws_region=$AWS_REGION" -auto-approve
+sed -i 's/prevent_destroy = false/prevent_destroy = true/g' main.tf
+rm -f terraform.tfstate terraform.tfstate.backup
 cd ../../..
 ```
 
@@ -931,23 +935,29 @@ Set-Location -Path "terraform-aws\global\s3-backend"
 Remove-Item -Path "backend.tf" -ErrorAction SilentlyContinue
 terraform init -migrate-state -force-copy
 
-# 2. Xóa toàn bộ objects và versions trong S3 bucket
-$versions = aws s3api list-object-versions --bucket "online-boutique-tfstate-$env:AWS_ACCOUNT_ID" --output json | ConvertFrom-Json
-if ($versions.Versions) {
-  $del = @{ Objects = @($versions.Versions | ForEach-Object { @{ Key = $_.Key; VersionId = $_.VersionId } }) } | ConvertTo-Json -Compress
-  aws s3api delete-objects --bucket "online-boutique-tfstate-$env:AWS_ACCOUNT_ID" --delete "$del" 2>$null
+# 2. Xóa toàn bộ objects và versions trong S3 bucket (ghi ra file tạm để tránh lỗi vượt giới hạn 32,767 ký tự CLI trên Windows)
+$bucket = "online-boutique-tfstate-$env:AWS_ACCOUNT_ID"
+$versions = aws s3api list-object-versions --bucket $bucket --output json | ConvertFrom-Json
+$allItems = @()
+if ($versions.Versions) { $allItems += $versions.Versions | ForEach-Object { @{ Key = $_.Key; VersionId = $_.VersionId } } }
+if ($versions.DeleteMarkers) { $allItems += $versions.DeleteMarkers | ForEach-Object { @{ Key = $_.Key; VersionId = $_.VersionId } } }
+for ($i = 0; $i -lt $allItems.Count; $i += 1000) {
+  $batch = $allItems[$i..([Math]::Min($i + 999, $allItems.Count - 1))]
+  $delJson = @{ Objects = @($batch); Quiet = $true } | ConvertTo-Json -Compress
+  [System.IO.File]::WriteAllText("$PWD\s3-del.json", $delJson, (New-Object System.Text.UTF8Encoding $false))
+  aws s3api delete-objects --bucket $bucket --delete file://s3-del.json | Out-Null
 }
-if ($versions.DeleteMarkers) {
-  $delMarkers = @{ Objects = @($versions.DeleteMarkers | ForEach-Object { @{ Key = $_.Key; VersionId = $_.VersionId } }) } | ConvertTo-Json -Compress
-  aws s3api delete-objects --bucket "online-boutique-tfstate-$env:AWS_ACCOUNT_ID" --delete "$delMarkers" 2>$null
-}
+Remove-Item -Path "s3-del.json" -ErrorAction SilentlyContinue
 
 # 3. Tạm thời tắt prevent_destroy trong main.tf
 $mainTf = (Get-Content -Raw -Path "main.tf") -replace 'prevent_destroy = true', 'prevent_destroy = false'
 [System.IO.File]::WriteAllText("$PWD\main.tf", $mainTf, (New-Object System.Text.UTF8Encoding $false))
 
-# 4. Thực thi destroy bucket
+# 4. Thực thi destroy bucket và khôi phục cấu hình gốc
 terraform destroy -var="aws_region=$env:AWS_REGION" -auto-approve
+$mainTfRestore = (Get-Content -Raw -Path "main.tf") -replace 'prevent_destroy = false', 'prevent_destroy = true'
+[System.IO.File]::WriteAllText("$PWD\main.tf", $mainTfRestore, (New-Object System.Text.UTF8Encoding $false))
+Remove-Item -Path "terraform.tfstate", "terraform.tfstate.backup" -ErrorAction SilentlyContinue
 Set-Location -Path "..\..\.."
 ```
 
