@@ -414,7 +414,7 @@ cd ../../..
 ```powershell
 # Chạy từ thư mục gốc của repo online-boutique-app
 Set-Location -Path "terraform-aws\global\github-oidc"
-terraform init -backend-config=backend.hcl
+terraform init -backend-config="backend.hcl"
 terraform apply -var="aws_region=$env:AWS_REGION" -var="github_org=$env:GITHUB_ORG" -auto-approve
 Set-Location -Path "..\..\.."
 ```
@@ -438,7 +438,7 @@ cd ../../..
 ```powershell
 # Chạy từ thư mục gốc của repo online-boutique-app
 Set-Location -Path "terraform-aws\global\ecr"
-terraform init -backend-config=backend.hcl
+terraform init -backend-config="backend.hcl"
 terraform apply -var="aws_region=$env:AWS_REGION" -var="project_name=online-boutique" -auto-approve
 Set-Location -Path "..\..\.."
 ```
@@ -808,7 +808,7 @@ aws elb describe-load-balancers --region $env:AWS_REGION --query "LoadBalancerDe
 
 # BƯỚC 2: Chạy Terraform Destroy (từ thư mục gốc của repo online-boutique-app)
 Set-Location -Path "terraform-aws\environments\dev"
-terraform init -backend-config=backend.hcl
+terraform init -backend-config="backend.hcl"
 terraform destroy -auto-approve
 
 # Xóa dự phòng CloudWatch Log Groups mồ côi (nếu VPC Flow Logs / EKS tái tạo trễ sau khi destroy)
@@ -862,7 +862,7 @@ foreach ($svc in $services) {
 
 # 2. Tiêu hủy tài nguyên ECR bằng Terraform
 Set-Location -Path "terraform-aws\global\ecr"
-terraform init -backend-config=backend.hcl
+terraform init -backend-config="backend.hcl"
 terraform destroy -var="aws_region=$env:AWS_REGION" -var="project_name=online-boutique" -auto-approve
 Set-Location -Path "..\..\.."
 ```
@@ -884,7 +884,7 @@ cd ../../..
 ```powershell
 # Chạy từ thư mục gốc của repo online-boutique-app
 Set-Location -Path "terraform-aws\global\github-oidc"
-terraform init -backend-config=backend.hcl
+terraform init -backend-config="backend.hcl"
 terraform destroy -var="aws_region=$env:AWS_REGION" -var="github_org=$env:GITHUB_ORG" -auto-approve
 Set-Location -Path "..\..\.."
 ```
