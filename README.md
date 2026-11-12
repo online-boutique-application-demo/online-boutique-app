@@ -37,7 +37,7 @@ graph TB
     subgraph "AWS Cloud (Account: <AWS_ACCOUNT_ID> | <AWS_REGION>)"
         subgraph "VPC - 10.0.0.0/16"
             subgraph "Public Subnets"
-                NLB[AWS Network Load Balancer (NLB)]
+                NLB["AWS Network Load Balancer (NLB)"]
                 NAT[NAT Gateway]
             end
 
@@ -74,7 +74,7 @@ graph TB
             end
 
             subgraph "Database Subnets"
-                REDIS[(ElastiCache Redis Multi-AZ)]
+                REDIS[("ElastiCache Redis Multi-AZ")]
             end
         end
 
@@ -251,8 +251,8 @@ The observability ecosystem delivers unified real-time visibility across the **T
 ```mermaid
 graph TD
     subgraph "Data Sources"
-        PODS[Application Pods & Containers]
-        ENVOY[Istio Envoy Sidecars & Ingress]
+        PODS["Application Pods & Containers"]
+        ENVOY["Istio Envoy Sidecars & Ingress"]
         NODES[EKS Worker Nodes]
     end
 
@@ -263,9 +263,9 @@ graph TD
     end
 
     subgraph "Storage Layer"
-        TSDB[(Prometheus TSDB gp2)]
-        LOKI[(Grafana Loki v2.9 gp2)]
-        TEMPO[(Grafana Tempo v1.18 gp2)]
+        TSDB[("Prometheus TSDB gp2")]
+        LOKI[("Grafana Loki v2.9 gp2")]
+        TEMPO[("Grafana Tempo v1.18 gp2")]
     end
 
     subgraph "Visualization & Alerting"
