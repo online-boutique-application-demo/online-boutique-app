@@ -174,7 +174,7 @@ graph TB
 
 | Tầng | CIDR Range | Mục đích | Internet Access |
 |------|-----------|----------|-----------------|
-| **Public** | `10.0.0.0/20` – `10.0.32.0/20` | NLB, NAT Gateway, Bastion | Inbound + Outbound |
+| **Public** | `10.0.0.0/20` – `10.0.32.0/20` | NLB (Istio Ingress), Classic ELB (ArgoCD), NAT Gateway | Inbound + Outbound |
 | **Private** | `10.0.48.0/20` – `10.0.80.0/20` | EKS Worker Nodes | Outbound qua NAT |
 | **Database** | `10.0.96.0/20` – `10.0.128.0/20` | ElastiCache Redis | Không (isolated) |
 
@@ -243,12 +243,12 @@ sequenceDiagram
     Dev->>GH: Push code / Create PR
     GH->>CI: Trigger workflow
     CI->>CI: Detect changed services
+    CI->>CI: SAST scan (SonarCloud)
     
     loop Per changed service
         CI->>CI: Run unit tests
         CI->>CI: Lint & format check
         CI->>CI: SCA scan (Trivy)
-        CI->>CI: SAST scan (SonarQube)
         CI->>CI: Build Docker image
         CI->>CI: Scan image (Trivy)
         CI->>CI: Sign image (Cosign)
@@ -285,7 +285,7 @@ sequenceDiagram
 | Repository | Mục đích | Nội dung chính |
 |-----------|----------|---------------|
 | **online-boutique-app** | Source code + Infrastructure | `src/`, `terraform-aws/`, `.github/workflows/`, `devops/` |
-| **online-boutique-config** | GitOps Configuration | ArgoCD apps, Kustomize base/overlays, Helm values |
+| **online-boutique-config** | GitOps Configuration | `argocd/`, `base/`, `overlays/` (Kustomize overlays cho microservices & Helm values cho add-ons), `scripts/` |
 
 ---
 
@@ -376,7 +376,7 @@ graph TB
 graph TD
     subgraph "Shift-Left Security"
         A["Pre-Commit\ngitleaks"] --> B["SCA\nTrivy FS + Dependabot"]
-        B --> C["SAST\nSonarQube"]
+        B --> C["SAST\nSonarCloud"]
         C --> D["Container Scan\nTrivy Image + Hadolint"]
         D --> E["Image Signing\nCosign"]
     end
@@ -401,7 +401,7 @@ graph TD
 | Pre-commit | gitleaks | Secret Scan | Phát hiện secrets trong code |
 | Build | Trivy (fs) | SCA | Quét CVEs trong dependencies |
 | Build | Dependabot | SCA | Auto-update vulnerable dependencies |
-| Build | SonarQube | SAST | Phân tích mã nguồn tìm lỗ hổng, code quality, Quality Gates |
+| Build | SonarCloud | SAST | Phân tích mã nguồn tìm lỗ hổng, code quality, Quality Gates (SaaS) |
 | Build | Hadolint | Dockerfile Lint | Best practices cho Dockerfile |
 | Build | Trivy (image) | Container Scan | Quét CVEs trong Docker images |
 | Build | Cosign | Image Signing | Ký xác thực Docker images |
